@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "An AWS CDK construct for deploying Lambda Web Functions.",
   "author": "John Nguyen",
+  "engines": {
+    "node": ">=24"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/jolo-dev/lambda-web-function-construct.git"
@@ -28,6 +31,7 @@
     "build": "jsii",
     "prepack": "bun run build",
     "test": "bun test",
+    "test:types": "tsc --strict --noEmit --skipLibCheck --esModuleInterop --target ES2022 --module commonjs --moduleResolution node --types node test/types/options.ts",
     "package:jsii": "jsii-pacmak"
   },
   "jsii": {
@@ -49,8 +53,8 @@
     "@types/node": "^24.0.0",
     "aws-cdk-lib": "2.274.0",
     "constructs": "10.6.0",
-    "jsii": "^6.0.19",
-    "jsii-pacmak": "^1.142.0",
+    "jsii": "6.0.19",
+    "jsii-pacmak": "1.142.0",
     "typescript": "^5.9.3"
   }
 }

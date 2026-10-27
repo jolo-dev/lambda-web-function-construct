@@ -22,6 +22,10 @@ import {
 import { BucketDeployment, Source } from "aws-cdk-lib/aws-s3-deployment";
 import { Construct } from "constructs";
 import { z } from "zod";
+import {
+	WebFunctionAuthType,
+	WebFunctionEndpointType,
+} from "./web-function-options";
 
 const webFunctionArchiveDirectory = mkdtempSync(
 	path.join(tmpdir(), "pawl-web-function-"),
@@ -29,17 +33,6 @@ const webFunctionArchiveDirectory = mkdtempSync(
 process.on("exit", () => {
 	rmSync(webFunctionArchiveDirectory, { recursive: true, force: true });
 });
-
-export enum WebFunctionEndpointType {
-	HOME_REGION = "HomeRegion",
-	MULTI_REGION = "MultiRegion",
-	PER_REGION = "PerRegion",
-}
-
-export enum WebFunctionAuthType {
-	IAM_AUTH = "IamAuth",
-	APPLICATION_MANAGED = "ApplicationManaged",
-}
 
 /** Properties for configuring a Lambda Web Function and its HTTPS endpoint. */
 export interface WebFunctionProps {
@@ -66,8 +59,18 @@ export interface WebFunctionProps {
 const WebFunctionPropsSchema = z.object({
 	entry: z.string().min(1),
 	functionName: z.string().min(1),
-	authType: z.enum(["IamAuth", "ApplicationManaged"]),
-	endpointType: z.enum(["HomeRegion", "MultiRegion", "PerRegion"]),
+	authType: z
+		.custom<WebFunctionAuthType>(
+			(value) => value instanceof WebFunctionAuthType,
+			{ message: "Expected an instance of WebFunctionAuthType" },
+		)
+		.transform((option) => option.value),
+	endpointType: z
+		.custom<WebFunctionEndpointType>(
+			(value) => value instanceof WebFunctionEndpointType,
+			{ message: "Expected an instance of WebFunctionEndpointType" },
+		)
+		.transform((option) => option.value),
 	endpointName: z.string().min(1),
 	description: z.string().optional(),
 	regions: z.array(z.string()).optional(),

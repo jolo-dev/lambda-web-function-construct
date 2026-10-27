@@ -1,6 +1,5 @@
+export { WebFunction, type WebFunctionProps } from "./web-function";
 export {
-  WebFunction,
-  WebFunctionAuthType,
-  WebFunctionEndpointType,
-  type WebFunctionProps,
-} from "./web-function";
+	WebFunctionAuthType,
+	WebFunctionEndpointType,
+} from "./web-function-options";
