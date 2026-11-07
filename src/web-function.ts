@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CfnOutput, Fn, RemovalPolicy } from "aws-cdk-lib";
+import { ArnFormat, CfnOutput, Fn, RemovalPolicy } from "aws-cdk-lib";
 import {
 	Effect,
 	PolicyStatement as IamPolicyStatement,
@@ -54,6 +54,14 @@ export interface WebFunctionProps {
 	readonly scalingConfig?: CfnWebFunctionEndpoint.ScalingConfigProperty;
 	/** Optional endpoint request-rate limit. */
 	readonly throttleConfig?: CfnWebFunctionEndpoint.ThrottleConfigProperty;
+	/** Optional maximum concurrent requests per execution environment (1–128). */
+	readonly maxConcurrencyPerEnvironment?: number;
+	/** Optional request timeout in seconds (3–900). */
+	readonly timeoutSeconds?: number;
+	/** Optional environment variables passed to the revision execution environment. */
+	readonly environmentVariables?: { readonly [key: string]: string };
+	/** Optional CloudWatch logging configuration for the revision. */
+	readonly loggingConfig?: CfnWebFunctionRevision.LoggingConfigProperty;
 }
 
 const WebFunctionPropsSchema = z.object({
@@ -80,7 +88,20 @@ const WebFunctionPropsSchema = z.object({
 	throttleConfig: z
 		.object({ rateLimit: z.number().int().nonnegative().optional() })
 		.optional(),
+	maxConcurrencyPerEnvironment: z.number().int().min(1).max(128).optional(),
+	timeoutSeconds: z.number().int().min(3).max(900).optional(),
+	environmentVariables: z.record(z.string(), z.string()).optional(),
+	loggingConfig: z
+		.object({
+			applicationLogLevel: z
+				.enum(["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"])
+				.optional(),
+			logGroup: z.string().min(1).optional(),
+			systemLogLevel: z.enum(["DEBUG", "INFO", "WARN"]).optional(),
+		})
+		.optional(),
 });
+type ParsedWebFunctionProps = z.infer<typeof WebFunctionPropsSchema>;
 
 /**
  * Creates a Lambda WebFunction, endpoint, revision, and revision execution role.
@@ -111,6 +132,12 @@ const WebFunctionPropsSchema = z.object({
  * ```
  */
 export class WebFunction extends Construct {
+	/** The ARN of the Lambda Web Function. */
+	public readonly functionArn: string;
+	/** The HTTPS domain name of the Lambda Web Function endpoint. */
+	public readonly endpointDomainName: string;
+	/** The revision identifier created for the bundled entry. */
+	public readonly revisionId: string;
 	private readonly constructId: string;
 
 	constructor(scope: Construct, id: string, props: WebFunctionProps) {
@@ -124,7 +151,7 @@ export class WebFunction extends Construct {
 		});
 
 		// Create the immutable code revision before routing traffic to it.
-		const webFunctionRevision = this.uploadToS3(webProps.entry, webFunction);
+		const webFunctionRevision = this.uploadToS3(webProps, webFunction);
 
 		// Route the endpoint to the revision created above, not a guessed revision ID.
 		const webFunctionEndpoint = new CfnWebFunctionEndpoint(
@@ -146,19 +173,26 @@ export class WebFunction extends Construct {
 		);
 		webFunctionEndpoint.node.addDependency(webFunctionRevision);
 
+		this.functionArn = webFunction.webFunctionRef.functionArn;
+		this.endpointDomainName = webFunctionEndpoint.attrDomainName;
+		this.revisionId = webFunctionRevision.attrRevisionId;
+
 		new CfnOutput(this, "webFunctionUrl", {
-			value: webFunction.webFunctionRef.functionArn,
+			value: this.functionArn,
 			exportName: `${id}-webFunctionArn`,
 		});
 
 		new CfnOutput(this, "webFunctionEndpointUrl", {
-			value: webFunctionEndpoint.attrDomainName,
+			value: this.endpointDomainName,
 			exportName: `${id}-webFunctionDomainName`,
 		});
 	}
 
-	private uploadToS3(entry: string, webFunction: CfnWebFunction) {
-		const bundleFile = this.bundleEntry(entry);
+	private uploadToS3(
+		webProps: ParsedWebFunctionProps,
+		webFunction: CfnWebFunction,
+	) {
+		const bundleFile = this.bundleEntry(webProps.entry);
 		const zipFile = this.zipBundle(bundleFile);
 		const codeBucket = new Bucket(
 			this,
@@ -205,6 +239,28 @@ export class WebFunction extends Construct {
 				assumedBy: new ServicePrincipal("lambda.amazonaws.com"),
 			},
 		);
+		// AWS requires execution-role permissions even for platform init/system logs.
+		// LocalStack emits these without enforcing the role, which can hide this gap.
+		const logGroup =
+			webProps.loggingConfig?.logGroup ?? `/aws/lambda/web/${webProps.functionName}`;
+		const logPermissions = iamRole.addToPrincipalPolicy(
+			new IamPolicyStatement({
+				actions: ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+				resources: [
+					logGroup,
+					`${logGroup}:*`,
+					`${logGroup}.local`,
+					`${logGroup}.local:*`,
+				].map((name) =>
+					codeBucket.stack.formatArn({
+						service: "logs",
+						resource: "log-group",
+						resourceName: name,
+						arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+					}),
+				),
+			}),
+		);
 		const cfnWebFunctionRevision = new CfnWebFunctionRevision(
 			this,
 			`${this.constructId}-web-function-revision`,
@@ -224,10 +280,20 @@ export class WebFunction extends Construct {
 				},
 				serviceConfig: {
 					executionRoleArn: iamRole.roleArn,
+					environmentVariables: webProps.environmentVariables,
+					maxConcurrencyPerEnvironment: webProps.maxConcurrencyPerEnvironment,
+					timeoutSeconds: webProps.timeoutSeconds,
+					telemetryConfig:
+						webProps.loggingConfig !== undefined
+							? { loggingConfig: webProps.loggingConfig }
+							: undefined,
 				},
 			},
 		);
 		cfnWebFunctionRevision.node.addDependency(codeDeployment);
+		if (logPermissions.policyDependable) {
+			cfnWebFunctionRevision.node.addDependency(logPermissions.policyDependable);
+		}
 		if (bucketReadPolicy.policyDependable !== undefined) {
 			cfnWebFunctionRevision.node.addDependency(
 				bucketReadPolicy.policyDependable,

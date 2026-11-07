@@ -1,0 +1,67 @@
+name: Publish to npm
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Node and Bun
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          cache: false
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build JSII assembly
+        run: bun run build
+
+      - name: Test
+        run: bun test
+
+      - name: Check developer-facing types
+        run: bun run test:types
+
+      - name: Check whether this version is published
+        id: version
+        run: |
+          bun --eval '
+            const { name, version } = await Bun.file("package.json").json();
+            const url = `https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(version)}`;
+            const response = await fetch(url, {
+              headers: { "Cache-Control": "no-cache" },
+              signal: AbortSignal.timeout(30_000),
+            });
+            if (response.status !== 200 && response.status !== 404) {
+              throw new Error(`npm registry returned ${response.status}; refusing to publish`);
+            }
+            const published = response.status === 200;
+            await Bun.write(Bun.stdout, `${name}@${version}: ${published ? "already published; skipping" : "ready to publish"}\n`);
+            const { appendFileSync } = await import("node:fs");
+            appendFileSync(process.env.GITHUB_OUTPUT, `published=${published}\n`);
+          '
+
+      # Configure publish.yml as an npm trusted publisher; no NPM_TOKEN is needed.
+      - name: Publish with npm trusted publishing
+        if: steps.version.outputs.published == 'false'
+        run: npm publish --access public --provenance

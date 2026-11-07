@@ -8,6 +8,12 @@ lib
 .jsii
 tsconfig.json
 *.tgz
+cdk.out
+cdk.out.*
+.venv-bench/
+__pycache__/
+*.pyc
+results
 
 # code coverage
 coverage

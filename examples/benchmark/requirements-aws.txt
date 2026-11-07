@@ -1,0 +1,2 @@
+# Includes the Lambda Web Functions service model used by aws-control.py.
+boto3==1.43.123

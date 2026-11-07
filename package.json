@@ -32,7 +32,19 @@
     "prepack": "bun run build",
     "test": "bun test",
     "test:types": "tsc --strict --noEmit --skipLibCheck --esModuleInterop --target ES2022 --module commonjs --moduleResolution node --types node test/types/options.ts",
-    "package:jsii": "jsii-pacmak"
+    "package:jsii": "jsii-pacmak",
+    "bench:deploy": "cdklocal deploy --all --app \"bun run examples/benchmark/cdk-app.ts\" --require-approval never --concurrency 4",
+    "bench:run": "bun run examples/benchmark/run.ts && bun run examples/benchmark/report.ts",
+    "bench:run:bare": "bun run examples/benchmark/bare-process-oha.ts",
+    "bench:run:bare:oha": "bun run examples/benchmark/bare-process-oha.ts",
+    "bench:report": "bun run examples/benchmark/report.ts",
+    "bench:deploy:aws": "cdk deploy --all --app \"bun run examples/benchmark/cdk-app.ts\" --require-approval never --concurrency 4",
+    "bench:run:aws": "bun run examples/benchmark/aws-run.ts",
+    "bench:report:aws": "bun run examples/benchmark/aws-report.ts",
+    "bench:run:oha": "bun run examples/benchmark/oha-run.ts",
+    "bench:report:oha": "bun run examples/benchmark/oha-report.ts",
+    "bench:run:framework": "bun run examples/benchmark/framework-launch.ts",
+    "bench:report:framework": "bun run examples/benchmark/framework-report.ts"
   },
   "jsii": {
     "outdir": "lib",
@@ -44,14 +56,18 @@
   "dependencies": {
     "zod": "^4.4.3"
   },
-  "bundledDependencies": ["zod"],
+  "bundledDependencies": [
+    "zod"
+  ],
   "peerDependencies": {
     "aws-cdk-lib": "^2.274.0",
     "constructs": "^10.6.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "aws-cdk": "^2.1147.0",
     "aws-cdk-lib": "2.274.0",
+    "aws-cdk-local": "^3.1.0",
     "constructs": "10.6.0",
     "jsii": "6.0.19",
     "jsii-pacmak": "1.142.0",
