@@ -31,7 +31,9 @@ jobs:
           cache: false
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: |
+          bun install --frozen-lockfile
+          bun install --cwd examples --frozen-lockfile
 
       - name: Build JSII assembly
         run: bun run build
@@ -40,7 +42,9 @@ jobs:
         run: bun test
 
       - name: Check developer-facing types
-        run: bun run test:types
+        run: |
+          bun run test:types
+          bun run test:types:cognito
 
       - name: Check whether this version is published
         id: version

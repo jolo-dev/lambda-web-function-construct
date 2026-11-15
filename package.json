@@ -32,6 +32,7 @@
     "prepack": "bun run build",
     "test": "bun test",
     "test:types": "tsc --strict --noEmit --skipLibCheck --esModuleInterop --target ES2022 --module commonjs --moduleResolution node --types node test/types/options.ts",
+    "test:types:cognito": "tsc -p examples/cognito/tsconfig.json",
     "package:jsii": "jsii-pacmak",
     "bench:deploy": "cdklocal deploy --all --app \"bun run examples/benchmark/cdk-app.ts\" --require-approval never --concurrency 4",
     "bench:run": "bun run examples/benchmark/run.ts && bun run examples/benchmark/report.ts",

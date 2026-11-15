@@ -2,7 +2,26 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ArnFormat, CfnOutput, Fn, RemovalPolicy } from "aws-cdk-lib";
+import {
+	ArnFormat,
+	CfnOutput,
+	Duration,
+	Fn,
+	RemovalPolicy,
+	Token,
+} from "aws-cdk-lib";
+import {
+	AccountRecovery,
+	CfnManagedLoginBranding,
+	FeaturePlan,
+	ManagedLoginVersion,
+	Mfa,
+	OAuthScope,
+	UserPool,
+	UserPoolClient,
+	UserPoolClientIdentityProvider,
+	UserPoolDomain,
+} from "aws-cdk-lib/aws-cognito";
 import {
 	Effect,
 	PolicyStatement as IamPolicyStatement,
@@ -34,6 +53,16 @@ process.on("exit", () => {
 	rmSync(webFunctionArchiveDirectory, { recursive: true, force: true });
 });
 
+/** Optional Cognito resources for a separate browser frontend using code + PKCE. */
+export interface WebFunctionCognitoOptions {
+	/** Unique Cognito domain prefix, using lowercase letters, numbers, and hyphens. */
+	readonly domainPrefix: string;
+	/** Exact frontend OAuth callback URLs. HTTPS is required except for loopback development. */
+	readonly callbackUrls: string[];
+	/** Exact frontend logout URLs. Defaults to callbackUrls when omitted. */
+	readonly logoutUrls?: string[];
+}
+
 /** Properties for configuring a Lambda Web Function and its HTTPS endpoint. */
 export interface WebFunctionProps {
 	/** Path to the TypeScript or JavaScript HTTP server entry file. */
@@ -62,7 +91,27 @@ export interface WebFunctionProps {
 	readonly environmentVariables?: { readonly [key: string]: string };
 	/** Optional CloudWatch logging configuration for the revision. */
 	readonly loggingConfig?: CfnWebFunctionRevision.LoggingConfigProperty;
+	/**
+	 * Provision a retained user pool, public app client, and managed login domain.
+	 * Requires APPLICATION_MANAGED. The application must still verify access tokens.
+	 * Injects COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID into the revision.
+	 */
+	readonly cognito?: WebFunctionCognitoOptions;
 }
+
+const cognitoRedirectUrlSchema = z.string().refine((value) => {
+	if (Token.isUnresolved(value)) return true;
+	try {
+		const url = new URL(value);
+		const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+		return (
+			!url.hash && !url.username && !url.password &&
+			(url.protocol === "https:" || (url.protocol === "http:" && loopback))
+		);
+	} catch {
+		return false;
+	}
+}, "Cognito URLs must use HTTPS (or HTTP loopback), without credentials or fragments");
 
 const WebFunctionPropsSchema = z.object({
 	entry: z.string().min(1),
@@ -91,6 +140,14 @@ const WebFunctionPropsSchema = z.object({
 	maxConcurrencyPerEnvironment: z.number().int().min(1).max(128).optional(),
 	timeoutSeconds: z.number().int().min(3).max(900).optional(),
 	environmentVariables: z.record(z.string(), z.string()).optional(),
+	cognito: z.object({
+		domainPrefix: z.string().min(1).max(63).refine(
+			(value) => Token.isUnresolved(value) || /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value),
+			"Invalid Cognito domain prefix",
+		),
+		callbackUrls: z.array(cognitoRedirectUrlSchema).min(1),
+		logoutUrls: z.array(cognitoRedirectUrlSchema).min(1).optional(),
+	}).optional(),
 	loggingConfig: z
 		.object({
 			applicationLogLevel: z
@@ -100,6 +157,24 @@ const WebFunctionPropsSchema = z.object({
 			systemLogLevel: z.enum(["DEBUG", "INFO", "WARN"]).optional(),
 		})
 		.optional(),
+}).superRefine((props, ctx) => {
+	if (!props.cognito) return;
+	if (props.authType !== WebFunctionAuthType.APPLICATION_MANAGED.value) {
+		ctx.addIssue({
+			code: "custom",
+			path: ["cognito"],
+			message: "Cognito requires APPLICATION_MANAGED authentication",
+		});
+	}
+	for (const key of ["COGNITO_USER_POOL_ID", "COGNITO_CLIENT_ID"]) {
+		if (props.environmentVariables?.[key] !== undefined) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["environmentVariables", key],
+				message: `${key} is managed by the Cognito configuration`,
+			});
+		}
+	}
 });
 type ParsedWebFunctionProps = z.infer<typeof WebFunctionPropsSchema>;
 
@@ -138,6 +213,12 @@ export class WebFunction extends Construct {
 	public readonly endpointDomainName: string;
 	/** The revision identifier created for the bundled entry. */
 	public readonly revisionId: string;
+	/** User pool created only when cognito is configured. Retained on stack deletion. */
+	public readonly userPool?: UserPool;
+	/** Public browser app client created only when cognito is configured. */
+	public readonly userPoolClient?: UserPoolClient;
+	/** Managed login domain created only when cognito is configured. */
+	public readonly userPoolDomain?: UserPoolDomain;
 	private readonly constructId: string;
 
 	constructor(scope: Construct, id: string, props: WebFunctionProps) {
@@ -146,6 +227,69 @@ export class WebFunction extends Construct {
 		this.constructId = id;
 		// The actual WebFunction
 		const webProps = WebFunctionPropsSchema.parse(props);
+		if (webProps.cognito) {
+			this.userPool = new UserPool(this, "UserPool", {
+				signInAliases: { email: true },
+				autoVerify: { email: true },
+				selfSignUpEnabled: false,
+				accountRecovery: AccountRecovery.EMAIL_ONLY,
+				mfa: Mfa.REQUIRED,
+				mfaSecondFactor: { sms: false, otp: true },
+				passwordPolicy: {
+					minLength: 12,
+					requireDigits: true,
+					requireLowercase: true,
+					requireUppercase: true,
+					requireSymbols: true,
+				},
+				featurePlan: FeaturePlan.ESSENTIALS,
+				removalPolicy: RemovalPolicy.RETAIN,
+			});
+			this.userPoolClient = this.userPool.addClient("BrowserClient", {
+				generateSecret: false,
+				supportedIdentityProviders: [UserPoolClientIdentityProvider.COGNITO],
+				authFlows: { userSrp: true },
+				oAuth: {
+					flows: { authorizationCodeGrant: true },
+					scopes: [OAuthScope.OPENID, OAuthScope.PROFILE, OAuthScope.EMAIL],
+					callbackUrls: webProps.cognito.callbackUrls,
+					logoutUrls: webProps.cognito.logoutUrls ?? webProps.cognito.callbackUrls,
+				},
+				accessTokenValidity: Duration.minutes(10),
+				idTokenValidity: Duration.minutes(10),
+				refreshTokenValidity: Duration.days(7),
+				enableTokenRevocation: true,
+				refreshTokenRotationGracePeriod: Duration.seconds(10),
+				preventUserExistenceErrors: true,
+			});
+			this.userPoolDomain = this.userPool.addDomain("LoginDomain", {
+				cognitoDomain: { domainPrefix: webProps.cognito.domainPrefix },
+				managedLoginVersion: ManagedLoginVersion.NEWER_MANAGED_LOGIN,
+			});
+			const branding = new CfnManagedLoginBranding(this, "LoginBranding", {
+				userPoolId: this.userPool.userPoolId,
+				clientId: this.userPoolClient.userPoolClientId,
+				useCognitoProvidedValues: true,
+			});
+			branding.node.addDependency(this.userPoolDomain);
+			webProps.environmentVariables = {
+				...webProps.environmentVariables,
+				COGNITO_USER_POOL_ID: this.userPool.userPoolId,
+				COGNITO_CLIENT_ID: this.userPoolClient.userPoolClientId,
+			};
+			new CfnOutput(this, "CognitoUserPoolId", {
+				value: this.userPool.userPoolId,
+			});
+			new CfnOutput(this, "CognitoClientId", {
+				value: this.userPoolClient.userPoolClientId,
+			});
+			new CfnOutput(this, "CognitoLoginDomain", {
+				value: this.userPoolDomain.baseUrl(),
+			});
+			new CfnOutput(this, "CognitoIssuer", {
+				value: `https://cognito-idp.${this.userPool.stack.region}.${this.userPool.stack.urlSuffix}/${this.userPool.userPoolId}`,
+			});
+		}
 		const webFunction = new CfnWebFunction(this, `${id}-web-function`, {
 			functionName: webProps.functionName,
 		});

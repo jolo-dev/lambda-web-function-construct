@@ -2,6 +2,7 @@ import {
 	WebFunctionAuthType,
 	WebFunctionEndpointType,
 	type WebFunctionProps,
+	type WebFunctionCognitoOptions,
 } from "../../src";
 
 const valid: WebFunctionProps = {
@@ -33,4 +34,18 @@ const invalidEndpointType: WebFunctionProps = {
 // @ts-expect-error Consumers must use the named, validated constants.
 new WebFunctionAuthType("IamAuth");
 
-void [valid, invalidString, invalidAuthType, invalidEndpointType];
+const cognito: WebFunctionCognitoOptions = {
+	domainPrefix: "my-app-login",
+	callbackUrls: ["http://localhost:5173/auth/callback"],
+};
+const withCognito: WebFunctionProps = { ...valid, cognito };
+const invalidCognito: WebFunctionProps = {
+	...valid,
+	cognito: {
+		domainPrefix: "my-app-login",
+		// @ts-expect-error A list of frontend callbacks is required, not a string.
+		callbackUrls: "https://app.example.com/callback",
+	},
+};
+
+void [valid, invalidString, invalidAuthType, invalidEndpointType, withCognito, invalidCognito];

@@ -1,4 +1,8 @@
-export { WebFunction, type WebFunctionProps } from "./web-function";
+export {
+	WebFunction,
+	type WebFunctionCognitoOptions,
+	type WebFunctionProps,
+} from "./web-function";
 export {
 	WebFunctionAuthType,
 	WebFunctionEndpointType,

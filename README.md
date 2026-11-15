@@ -42,6 +42,42 @@ app.synth();
 
 The entry point is bundled with Bun for Node.js and deployed as a Node.js 24 Lambda Web Function revision. The construct creates the private S3 code bucket, grants the Lambda service read access to the versioned ZIP, grants the revision execution role scoped CloudWatch Logs permissions for its centralized and `.local` log groups, and routes the endpoint to the generated revision.
 
+## Optional Cognito authentication
+
+For a separate browser frontend with signed-in users, pass the optional `cognito` parameter:
+
+```ts
+const api = new WebFunction(stack, "AuthenticatedApi", {
+  entry: "src/http.ts", // Must verify Cognito access tokens on protected routes.
+  functionName: "authenticated-api",
+  endpointName: "prod",
+  authType: WebFunctionAuthType.APPLICATION_MANAGED,
+  endpointType: WebFunctionEndpointType.HOME_REGION,
+  cognito: {
+    domainPrefix: "my-unique-app-login",
+    callbackUrls: ["https://app.example.com/auth/callback"],
+    logoutUrls: ["https://app.example.com/"],
+  },
+});
+
+// Available only when cognito is configured:
+// api.userPool, api.userPoolClient, api.userPoolDomain
+```
+
+This creates a retained Cognito User Pool, a public app client **without a secret**, and a managed-login v2 domain with default branding. The client enables authorization code flow for frontend PKCE login, token revocation and refresh-token rotation. The pool disables public sign-up, requires authenticator-app TOTP MFA, and uses the Essentials feature plan. Access/ID tokens last 10 minutes; refresh tokens last 7 days. Review Cognito pricing and invite users before trying sign-in.
+
+The construct injects `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` into the revision and outputs those IDs, the login domain, and the OIDC issuer. These environment-variable names are reserved when `cognito` is configured. `logoutUrls` defaults to `callbackUrls`; web redirect URLs must use HTTPS except for HTTP loopback development. Existing constructs are unchanged when the option is omitted.
+
+**Provisioning Cognito does not automatically protect application routes.** The frontend sends `Authorization: Bearer <access_token>`; your application must verify it and enforce permissions. Cognito configuration requires `APPLICATION_MANAGED`, not `IAM_AUTH`. No Amplify, Better Auth, Identity Pool, or API Gateway is needed.
+
+![AWS-icon architecture: separate frontend, Amazon Cognito, and a Lambda Web Function that verifies access tokens](examples/cognito/diagrams/cognito-architecture.png)
+
+[Editable architecture diagram](examples/cognito/diagrams/cognito-architecture.excalidraw) · [Step-by-step OIDC flow](examples/cognito/OIDC_FLOW.md)
+
+See **[Cognito-protected backend examples](examples/cognito/README.md)** for runnable [Hono](examples/cognito/hono/app.ts), [Express](examples/cognito/express/app.ts), and [Node HTTP](examples/cognito/node-http/app.ts) implementations, deployment instructions, exact-origin CORS, PKCE frontend integration, and offline authentication tests. These are separate from the benchmark examples.
+
+User pools are retained on stack deletion or when removing the option; their stack-managed clients and domains are removed. Review retained pools explicitly before deleting user data.
+
 ## Development
 
 Install [mise](https://mise.jdx.dev/getting-started.html), then use the pinned Node.js 24.22.1 and Bun 1.4.4 toolchain:
@@ -50,7 +86,10 @@ Install [mise](https://mise.jdx.dev/getting-started.html), then use the pinned N
 mise trust
 mise install
 mise exec -- bun install --frozen-lockfile
+mise exec -- bun install --cwd examples --frozen-lockfile
 mise exec -- bun run build
+mise exec -- bun run test:types
+mise exec -- bun run test:types:cognito
 mise exec -- bun test
 ```
 
@@ -221,7 +260,7 @@ not silently assumed successful.
 
 ## Publishing
 
-[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs on pushes to `main` and can also be started manually. It uses the mise-pinned Node/Bun toolchain, installs from the frozen lockfile, builds the JSII assembly, and runs runtime and compile-time tests. It publishes only when the version in `package.json` is not already on npm; existing versions are skipped, and registry errors fail the workflow rather than attempting a publish.
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs on pushes to `main` and can also be started manually. It uses the mise-pinned Node/Bun toolchain, installs the library and example dependencies from their frozen lockfiles, builds the JSII assembly, and runs runtime and compile-time tests. It publishes only when the version in `package.json` is not already on npm; existing versions are skipped, and registry errors fail the workflow rather than attempting a publish.
 
 To release, bump `version` in `package.json`, update `bun.lock` with `bun install`, and merge into `main`. The workflow does not automatically bump versions or commit changes.
 
