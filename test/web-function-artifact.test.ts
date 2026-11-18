@@ -88,6 +88,26 @@ test("starts the extracted artifact using its configured entrypoint and endpoint
   const source = mkdtempSync(path.join(tmpdir(), "web-function-runtime-source-"));
   const extracted = mkdtempSync(path.join(tmpdir(), "web-function-runtime-extracted-"));
   let child: ReturnType<typeof spawn> | undefined;
+  let childError: Error | undefined;
+  let stdout = "";
+  let stderr = "";
+  const isTerminal = () => child === undefined || child.exitCode !== null || child.signalCode !== null || childError !== undefined;
+  const waitForTerminal = (timeoutMs: number) => new Promise<boolean>((resolve) => {
+    if (isTerminal()) return resolve(true);
+    let done = false;
+    const finish = (terminal: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      child!.removeListener("exit", onTerminal);
+      child!.removeListener("error", onTerminal);
+      resolve(terminal);
+    };
+    const onTerminal = () => finish(true);
+    const timer = setTimeout(() => finish(isTerminal()), timeoutMs);
+    child!.once("exit", onTerminal);
+    child!.once("error", onTerminal);
+  });
   try {
     mkdirSync(path.join(source, "nested"));
     writeFileSync(path.join(source, "package.json"), JSON.stringify({ type: "module" }));
@@ -118,13 +138,13 @@ test("starts the extracted artifact using its configured entrypoint and endpoint
       env: { ...process.env, AWS_LAMBDA_HTTP_ENDPOINT: "127.0.0.1:0" },
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let stdout = "";
-    let stderr = "";
+    child.on("error", (error) => { childError = error; });
     child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
     const startupDeadline = Date.now() + 3000;
     let port: number | undefined;
     while (Date.now() < startupDeadline && port === undefined) {
+      if (childError) throw new Error(`Failed to spawn extracted server: ${childError.message}; stderr: ${stderr}`);
       if (child.exitCode !== null) throw new Error(`Extracted server exited (${child.exitCode}): ${stderr}`);
       const marker = stdout.match(/READY:(\d+)/);
       if (marker) port = Number(marker[1]);
@@ -145,22 +165,22 @@ test("starts the extracted artifact using its configured entrypoint and endpoint
     });
     expect(body).toBe("from nested artifact");
   } finally {
-    if (child && child.exitCode === null) {
-      child.kill("SIGTERM");
-      const exited = await Promise.race([
-        new Promise<boolean>((resolve) => child!.once("exit", () => resolve(true))),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)),
-      ]);
-      if (!exited && child.exitCode === null) {
-        child.kill("SIGKILL");
-        await new Promise<void>((resolve) => {
-          if (child!.exitCode !== null) return resolve();
-          child!.once("exit", () => resolve());
-        });
+    try {
+      if (child && child.exitCode === null && child.signalCode === null && childError === undefined) {
+        child.kill("SIGTERM");
+        const exited = await waitForTerminal(1000);
+        if (!exited && !isTerminal()) {
+          child.kill("SIGKILL");
+          const forceExited = await waitForTerminal(1000);
+          if (!forceExited && !isTerminal()) {
+            throw new Error("Extracted server remained alive after SIGKILL (1s exit deadline)");
+          }
+        }
       }
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+      rmSync(extracted, { recursive: true, force: true });
     }
-    rmSync(source, { recursive: true, force: true });
-    rmSync(extracted, { recursive: true, force: true });
   }
 });
 
