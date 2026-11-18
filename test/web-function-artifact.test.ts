@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer, request } from "node:http";
 import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
@@ -79,6 +80,83 @@ test("packages a prebuilt artifact and exposes endpoint properties", () => {
     expect(lstatSync(path.join(artifactDirectory, "linked-directory")).isSymbolicLink()).toBe(true);
     expect(readdirSync(extracted)).not.toContain("artifact");
   } finally {
+    rmSync(extracted, { recursive: true, force: true });
+  }
+});
+
+test("starts the extracted artifact using its configured entrypoint and endpoint", async () => {
+  const source = mkdtempSync(path.join(tmpdir(), "web-function-runtime-source-"));
+  const extracted = mkdtempSync(path.join(tmpdir(), "web-function-runtime-extracted-"));
+  const probe = createServer();
+  let child: ReturnType<typeof spawn> | undefined;
+  try {
+    mkdirSync(path.join(source, "nested"));
+    writeFileSync(path.join(source, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(path.join(source, "nested", "message.mjs"), 'export const message = "from nested artifact";');
+    writeFileSync(path.join(source, "index.mjs"), [
+      'import { createServer } from "node:http";',
+      'import { message } from "./nested/message.mjs";',
+      'const [host, port] = (process.env.AWS_LAMBDA_HTTP_ENDPOINT || "127.0.0.1:3000").split(":");',
+      'createServer((_request, response) => response.end(message)).listen(Number(port), host);',
+    ].join("\n"));
+
+    const { assembly } = synth({ ...common, artifact: { directory: source, entrypoint: "index.mjs" } });
+    const zip = findZip(assembly.directory);
+    expect(zip).not.toBe("");
+    const listing = execFileSync("unzip", ["-Z1", zip], { encoding: "utf8" }).split(/\r?\n/);
+    expect(listing).toContain("index.mjs");
+    expect(listing).toContain("nested/message.mjs");
+    execFileSync("unzip", ["-q", zip, "-d", extracted]);
+    expect(readFileSync(path.join(extracted, "index.mjs"), "utf8")).toContain('./nested/message.mjs');
+    expect(statSync(path.join(extracted, "index.mjs")).mode & 0o777).toBe(0o644);
+    const port = await new Promise<number>((resolve, reject) => {
+      probe.once("error", reject);
+      probe.listen(0, "127.0.0.1", () => {
+        const address = probe.address();
+        if (!address || typeof address === "string") return reject(new Error("No TCP port allocated"));
+        resolve(address.port);
+      });
+    });
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    child = spawn("node", ["index.mjs"], {
+      cwd: extracted,
+      env: { ...process.env, AWS_LAMBDA_HTTP_ENDPOINT: `127.0.0.1:${port}` },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    const deadline = Date.now() + 5000;
+    let body: string | undefined;
+    while (Date.now() < deadline && body === undefined) {
+      if (child.exitCode !== null) throw new Error(`Extracted server exited (${child.exitCode}): ${stderr}`);
+      try {
+        body = await new Promise<string>((resolve, reject) => {
+          const req = request({ host: "127.0.0.1", port, path: "/", method: "GET", timeout: 500 }, (res) => {
+            let data = "";
+            res.setEncoding("utf8");
+            res.on("data", (chunk) => { data += chunk; });
+            res.on("end", () => resolve(data));
+          });
+          req.on("timeout", () => req.destroy(new Error("request timeout")));
+          req.on("error", reject);
+          req.end();
+        });
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+    expect(body).toBe("from nested artifact");
+  } finally {
+    if (child && child.exitCode === null) {
+      child.kill("SIGTERM");
+      await Promise.race([
+        new Promise<void>((resolve) => child!.once("exit", () => resolve())),
+        new Promise<void>((resolve) => setTimeout(() => { child!.kill("SIGKILL"); resolve(); }, 1000)),
+      ]);
+    }
+    if (probe.listening) await new Promise<void>((resolve) => probe.close(() => resolve()));
+    rmSync(source, { recursive: true, force: true });
     rmSync(extracted, { recursive: true, force: true });
   }
 });

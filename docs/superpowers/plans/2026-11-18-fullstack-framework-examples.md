@@ -51,11 +51,11 @@ The complete staging/archive implementation and its size, determinism, symlink, 
 
 **Files:** Expand `test/web-function-artifact.test.ts`; modify `src/web-function-artifact.ts` only if the startup probe reveals a packaging defect.
 
-- [ ] **Step 1: Add an extracted-artifact runtime test.** Build a separate fixture whose `index.mjs` imports a nested module and starts a Node HTTP server using `AWS_LAMBDA_HTTP_ENDPOINT` (`host:port`, with a local-only fallback). Synthesize and locate the revision ZIP, extract it to a fresh temporary directory, spawn `node` with `cwd` set to that extracted root and a non-default free port in `AWS_LAMBDA_HTTP_ENDPOINT`, then issue an HTTP request and assert the response comes from the nested import. Do not execute the original source fixture. Enforce bounded startup/request/cleanup timeouts and terminate the process even on assertion failure.
-- [ ] **Step 2: RED.** Run the new targeted test before implementation/fixture adjustment and verify that it fails for a meaningful extracted-package startup or path reason, not a missing system dependency.
-- [ ] **Step 3: Minimal GREEN.** Correct only an observed packaging/startup defect; do not alter already-reviewed size/determinism/symlink guarantees without a regression test. Preserve the legacy `entry` code path.
-- [ ] **Step 4: GREEN.** Run `bun test test/web-function-artifact.test.ts test/web-function.test.ts && bun run build && bun run test:types`. Inspect the actual ZIP listing and extracted entrypoint/modes.
-- [ ] **Step 5: Commit.** Commit the extracted-artifact startup test (and any verified fix) separately.
+- [x] **Step 1: Add an extracted-artifact runtime test.** Build a separate fixture whose `index.mjs` imports a nested module and starts a Node HTTP server using `AWS_LAMBDA_HTTP_ENDPOINT` (`host:port`, with a local-only fallback). Synthesize and locate the revision ZIP, extract it to a fresh temporary directory, spawn `node` with `cwd` set to that extracted root and a non-default free port in `AWS_LAMBDA_HTTP_ENDPOINT`, then issue an HTTP request and assert the response comes from the nested import. Do not execute the original source fixture. Enforce bounded startup/request/cleanup timeouts and terminate the process even on assertion failure.
+- [x] **Step 2: RED.** Ran the new targeted test against the already-complete Task 2 packaging implementation; it passed immediately, so no artificial failing test or fixture adjustment was introduced. This differs from the expected RED result because archive implementation was completed in Task 2 commits `1f0417e`–`4c98468`.
+- [x] **Step 3: Minimal GREEN.** No packaging/startup defect was observed, so no implementation change was warranted. The legacy `entry` code path remains unchanged.
+- [x] **Step 4: GREEN.** `bun test test/web-function-artifact.test.ts test/web-function.test.ts && bun run build && bun run test:types` passes. The runtime test inspects the ZIP listing and extracted entrypoint content/mode (`0644`).
+- [x] **Step 5: Commit.** Commit the extracted-artifact startup test and this Task 3 progress update separately.
 
 ## Task 4: Delivery security and validation skeleton
 
