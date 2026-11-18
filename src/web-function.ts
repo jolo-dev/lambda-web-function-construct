@@ -380,15 +380,24 @@ export class WebFunction extends Construct {
 	}
 
 	/**
-	 * Records the WebFunctionDelivery that owns this Web Function's CloudFront invoke policy.
+	 * Throws when a WebFunctionDelivery already owns this Web Function. Does not claim ownership.
 	 * @internal
 	 */
-	public _attachDelivery(owner: Construct): void {
+	public _assertDeliveryAvailable(): void {
 		if (this.deliveryOwner) {
 			throw new Error(
 				`WebFunction ${this.node.path} already has a delivery attached at ${this.deliveryOwner.node.path}`,
 			);
 		}
+	}
+
+	/**
+	 * Records the WebFunctionDelivery that owns this Web Function's CloudFront invoke policy.
+	 * Call only after the owner's constructs are fully created, so a failed construction leaves no claim.
+	 * @internal
+	 */
+	public _attachDelivery(owner: Construct): void {
+		this._assertDeliveryAvailable();
 		this.deliveryOwner = owner;
 	}
 

@@ -119,6 +119,17 @@ test.each([
   expect(Template.fromStack(stack).findResources("AWS::CloudFront::Distribution")).toEqual({});
 });
 
+test("rejects an empty static asset mapping list before constructing a distribution", () => {
+  const stack = new Stack(new App(), "EmptyMappingsStack");
+  const webFunction = iamWebFunction(stack);
+
+  expect(() => new WebFunctionDelivery(stack, "Delivery", {
+    webFunction,
+    staticAssets: [],
+  })).toThrow(/expected array to have >=1 items/);
+  expect(Template.fromStack(stack).findResources("AWS::CloudFront::Distribution")).toEqual({});
+});
+
 test.each([
   ["identical prefixes", "/_next/static/", "/_next/static/"],
   ["a prefix and its descendant", "/_next/", "/_next/static/"],
@@ -150,6 +161,35 @@ test("rejects a second delivery attachment to the same Web Function", () => {
     staticAssets: [{ directory: secondStaticDirectory, urlPrefix: "/assets/" }],
   })).toThrow(/already has a delivery/);
   Template.fromStack(stack).resourceCountIs("AWS::CloudFront::Distribution", 1);
+});
+
+test("releases no delivery claim when a later construction step fails", () => {
+  const stack = new Stack(new App(), "FailedAttachStack");
+  const webFunction = iamWebFunction(stack);
+  // The resource policy is the last construction step and the only reader of functionArn.
+  const functionArn = webFunction.functionArn;
+  let failNextRead = true;
+  Object.defineProperty(webFunction, "functionArn", {
+    configurable: true,
+    get: () => {
+      if (failNextRead) {
+        failNextRead = false;
+        throw new Error("injected resource policy failure");
+      }
+      return functionArn;
+    },
+  });
+
+  expect(() => new WebFunctionDelivery(stack, "FailedDelivery", {
+    webFunction,
+    staticAssets: [{ directory: staticDirectory, urlPrefix: "/_next/static/" }],
+  })).toThrow("injected resource policy failure");
+
+  const retried = new WebFunctionDelivery(stack, "RetriedDelivery", {
+    webFunction,
+    staticAssets: [{ directory: staticDirectory, urlPrefix: "/_next/static/" }],
+  });
+  expect(retried.url).toMatch(/^https:\/\//);
 });
 
 test("synthesizes a private CloudFront delivery for one IAM HomeRegion static mapping", () => {
@@ -238,15 +278,35 @@ test("synthesizes a private CloudFront delivery for one IAM HomeRegion static ma
   });
 
   template.resourceCountIs("AWS::Lambda::ResourcePolicy", 1);
+  const endpointId = logicalIdWhere(template, "AWS::Lambda::WebFunctionEndpoint", () => true);
+  const functionId = logicalIdWhere(template, "AWS::Lambda::WebFunction", () => true);
+  const distributionId = logicalIdWhere(template, "AWS::CloudFront::Distribution", () => true);
   template.hasResourceProperties("AWS::Lambda::ResourcePolicy", {
+    ResourceArn: { Ref: functionId },
     PolicyDocument: {
       Statement: [
         {
           Effect: "Allow",
           Principal: { Service: "cloudfront.amazonaws.com" },
           Action: "lambda:InvokeWebFunctionEndpoint",
-          Resource: Match.objectLike({ "Fn::GetAtt": Match.anyValue() }),
-          Condition: { StringEquals: { "aws:SourceArn": Match.anyValue() } },
+          Resource: { "Fn::GetAtt": [endpointId, "EndpointArn"] },
+          Condition: {
+            StringEquals: {
+              "aws:SourceArn": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    { Ref: "AWS::Partition" },
+                    ":cloudfront::",
+                    { Ref: "AWS::AccountId" },
+                    ":distribution/",
+                    { Ref: distributionId },
+                  ],
+                ],
+              },
+            },
+          },
         },
       ],
     },

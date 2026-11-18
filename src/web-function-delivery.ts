@@ -157,7 +157,7 @@ export class WebFunctionDelivery extends Construct {
 			removalPolicy: props.removalPolicy,
 		});
 		const removalPolicy = parsed.removalPolicy ?? RemovalPolicy.RETAIN;
-		webFunction._attachDelivery(this);
+		webFunction._assertDeliveryAvailable();
 
 		this.assetBucket = new Bucket(this, "AssetBucket", {
 			blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
@@ -225,5 +225,6 @@ export class WebFunctionDelivery extends Construct {
 				],
 			},
 		});
+		webFunction._attachDelivery(this);
 	}
 }
