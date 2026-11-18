@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "build:artifact": "bun run build && bun run build-artifact.mjs"
+    "build:artifact": "bash ../shared/build-native.sh . -- node build-artifact.mjs"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.46",
