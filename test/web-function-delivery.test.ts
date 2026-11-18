@@ -109,6 +109,7 @@ test.each([
   ["a relative prefix", "_next/static/"],
   ["an empty segment", "/_next//static/"],
   ["an encoded traversal segment", "/_next/%2e%2e/"],
+  ["a non-ASCII character", "/_next/statíc/"],
 ])("rejects %s before constructing a distribution", (_label, urlPrefix) => {
   const stack = new Stack(new App(), "InvalidPrefixStack");
   const webFunction = iamWebFunction(stack);
@@ -387,6 +388,11 @@ test("normalizes a static prefix without a trailing slash and shares one private
       ],
     },
   });
+  const [distribution] = Object.values(template.findResources("AWS::CloudFront::Distribution"));
+  const origins = distribution!.Properties.DistributionConfig.Origins;
+  expect(origins).toHaveLength(2);
+  expect(origins.filter((origin: { CustomOriginConfig?: unknown }) => origin.CustomOriginConfig)).toHaveLength(1);
+  expect(origins.filter((origin: { S3OriginConfig?: unknown }) => origin.S3OriginConfig)).toHaveLength(1);
   template.resourceCountIs("AWS::Lambda::ResourcePolicy", 1);
   template.resourceCountIs("AWS::Lambda::Permission", 0);
 });
@@ -575,6 +581,28 @@ test("the deployed viewer-request function replaces client-supplied forwarded he
   expect(forwarded.headers["x-forwarded-proto"]).toEqual({ value: "https" });
 });
 
+test("the deployed viewer-request function removes client-supplied Forwarded and replaces every duplicate forwarded host value", () => {
+  const handler = deployedViewerRequestHandler(Template.fromStack(deliveryStack("ProxyForwardedStack")));
+  const rewritten = handler({
+    request: {
+      uri: "/dashboard",
+      headers: {
+        host: { value: "d111abc.cloudfront.net" },
+        forwarded: { value: 'for=198.51.100.9;host=attacker.example;proto=http' },
+        "x-forwarded-host": {
+          value: "attacker.example",
+          multiValue: [{ value: "attacker.example" }, { value: "evil.example" }],
+        },
+        "x-forwarded-proto": { value: "http" },
+      },
+    },
+  });
+
+  expect(rewritten.headers.forwarded).toBeUndefined();
+  expect(rewritten.headers["x-forwarded-host"]).toEqual({ value: "d111abc.cloudfront.net" });
+  expect(rewritten.headers["x-forwarded-proto"]).toEqual({ value: "https" });
+});
+
 test("the deployed viewer-request function refuses a request without a viewer Host", () => {
   const handler = deployedViewerRequestHandler(Template.fromStack(deliveryStack("ProxyNoHostStack")));
   expect(handler({ request: { uri: "/", headers: {} } })).toEqual({
@@ -644,6 +672,30 @@ test("caches static assets for one immutable year without forwarding cookies, qu
           OriginRequestPolicyId: Match.absent(),
         }),
       ],
+    },
+  });
+});
+
+test("enables gzip and brotli Accept-Encoding support on the static cache policy only", () => {
+  const template = Template.fromStack(deliveryStack("StaticCompressionStack"));
+  const staticPolicyId = logicalIdWhere(template, "AWS::CloudFront::CachePolicy", (resource) =>
+    resource.Properties.CachePolicyConfig.DefaultTTL === 31536000);
+  const dynamicPolicyId = logicalIdWhere(template, "AWS::CloudFront::CachePolicy", (resource) =>
+    resource.Properties.CachePolicyConfig.DefaultTTL === 0);
+
+  template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
+    CachePolicyConfig: {
+      DefaultTTL: 31536000,
+      ParametersInCacheKeyAndForwardedToOrigin: {
+        EnableAcceptEncodingGzip: true,
+        EnableAcceptEncodingBrotli: true,
+      },
+    },
+  });
+  template.hasResourceProperties("AWS::CloudFront::Distribution", {
+    DistributionConfig: {
+      CacheBehaviors: [Match.objectLike({ CachePolicyId: { Ref: staticPolicyId } })],
+      DefaultCacheBehavior: Match.objectLike({ CachePolicyId: { Ref: dynamicPolicyId } }),
     },
   });
 });

@@ -1,9 +1,11 @@
 import {
 	WebFunctionAuthType,
 	WebFunctionEndpointType,
+	type WebFunction,
 	type WebFunctionProps,
 	type WebFunctionArtifactOptions,
 	type WebFunctionCognitoOptions,
+	type WebFunctionDeliveryProps,
 } from "../../src";
 
 const valid: WebFunctionProps = {
@@ -57,4 +59,17 @@ const invalidCognito: WebFunctionProps = {
 	},
 };
 
-void [valid, invalidString, invalidAuthType, invalidEndpointType, withCognito, invalidCognito];
+declare const webFunction: WebFunction;
+const delivery: WebFunctionDeliveryProps = {
+	webFunction,
+	staticAssets: [{ directory: "dist/_next/static", urlPrefix: "/_next/static/" }],
+};
+const invalidDelivery: WebFunctionDeliveryProps = {
+	webFunction,
+	staticAssets: [
+		// @ts-expect-error Static asset mappings must name the URL prefix they serve.
+		{ directory: "dist/_next/static" },
+	],
+};
+
+void [valid, invalidString, invalidAuthType, invalidEndpointType, withCognito, invalidCognito, delivery, invalidDelivery];

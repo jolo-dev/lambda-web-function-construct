@@ -49,10 +49,10 @@ export interface WebFunctionDeliveryProps {
 
 /**
  * Normalizes a static asset URL prefix to an absolute directory form with a trailing slash.
- * Returns undefined for the root, wildcards, traversal, empty segments, or encoded characters.
+ * Returns undefined for the root, wildcards, traversal, empty segments, encoded, or non-ASCII characters.
  */
 function normalizeUrlPrefix(urlPrefix: string): string | undefined {
-	if (!urlPrefix.startsWith("/") || /[*?#%\\\s\p{Cc}]/u.test(urlPrefix)) return undefined;
+	if (!urlPrefix.startsWith("/") || /[*?#%\\\s\p{Cc}]|[^\x00-\x7F]/u.test(urlPrefix)) return undefined;
 	const body = urlPrefix.replace(/\/$/, "");
 	if (body === "") return undefined;
 	const segments = body.slice(1).split("/");
@@ -70,7 +70,7 @@ const staticAssetMappingSchema = z
 			if (normalized === undefined) {
 				ctx.addIssue({
 					code: "custom",
-					message: `Static asset URL prefix "${value}" must be an absolute directory path without the root, wildcards, traversal, empty segments, or encoded characters`,
+					message: `Static asset URL prefix "${value}" must be an absolute ASCII directory path without the root, wildcards, traversal, empty segments, or encoded characters`,
 				});
 				return z.NEVER;
 			}
@@ -204,6 +204,8 @@ export class WebFunctionDelivery extends Construct {
 		const staticAssetCachePolicy = new CachePolicy(this, "StaticAssetCachePolicy", {
 			defaultTtl: immutableAssetTtl,
 			maxTtl: immutableAssetTtl,
+			enableAcceptEncodingGzip: true,
+			enableAcceptEncodingBrotli: true,
 		});
 		// Zero TTLs keep dynamic responses out of the shared cache even when the origin sends cache headers.
 		// The Web Function OAC guide requires Authorization in the cache policy of every behavior that uses the origin.
