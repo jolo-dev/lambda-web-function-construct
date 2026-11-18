@@ -33,6 +33,10 @@ function copyArtifactEntry(
 	state: StagingState,
 	copyFile: (source: string, destination: string) => void,
 ): void {
+	const entryName = path.basename(destination);
+	if (/[\r\n]/.test(entryName)) {
+		throw new Error("Artifact entry names cannot contain newline or carriage return characters");
+	}
 	const sourceInfo = lstatSync(source);
 	const resolvedSource = sourceInfo.isSymbolicLink() ? realpathSync(source) : source;
 	if (!isWithinRoot(root, realpathSync(resolvedSource))) {

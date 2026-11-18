@@ -103,6 +103,23 @@ test.each([
   expect(() => synth({ ...common, ...props })).toThrow();
 });
 
+test("rejects newline entry names and cleans up staging before ZIP creation", () => {
+  const directory = mkdtempSync(path.join(fixture, "newline-artifact-"));
+  const outputZip = path.join(fixture, "newline.zip");
+  const stagedBefore = readdirSync(tmpdir()).filter((entry) => entry.startsWith("pawl-web-artifact-"));
+  try {
+    writeFileSync(path.join(directory, "bad\nname.txt"), "unsafe ZIP list path");
+    let zipInvoked = false;
+    expect(() => zipArtifactDirectory(directory, outputZip, () => { zipInvoked = true; })).toThrow(/newline|carriage return/i);
+    expect(zipInvoked).toBe(false);
+    expect(existsSync(outputZip)).toBe(false);
+    expect(readdirSync(tmpdir()).filter((entry) => entry.startsWith("pawl-web-artifact-"))).toEqual(stagedBefore);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(outputZip, { force: true });
+  }
+});
+
 test("rejects an artifact larger than 512 MiB before ZIP creation", () => {
   const directory = mkdtempSync(path.join(fixture, "oversized-artifact-"));
   const sparseFile = path.join(directory, "large.bin");
