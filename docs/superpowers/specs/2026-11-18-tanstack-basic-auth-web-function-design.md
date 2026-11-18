@@ -46,9 +46,9 @@ stack environment wiring described below.
 | `src/routes/_authed.tsx` | Pathless protected layout. `beforeLoad` throws `Not authenticated` when `context.user` is absent; `errorComponent` renders the login UI for that error. |
 | `src/routes/_authed/profile.tsx` | Protected page that displays the authenticated demo email. |
 | `src/routes/index.tsx` | Public home page: retains request-time SSR timestamp, client counter, `/api/square` mutation form, and a link to login/profile. |
-| `src/routes/logout.tsx`, `about.tsx`, `api.square.ts`, `__probe/identity.ts` | Existing behavior retained. |
+| `src/routes/about.tsx`, `src/routes/api.square.ts`, and the launcher's `/__probe/identity` behavior | Existing behavior retained. The probe identity is served by `index.js`, not by a route file. |
 | `stack.ts` | Adds `environmentVariables: { SESSION_PASSWORD: ..., NODE_ENV: "production" }` to the `WebFunction`. Values come from synth-time environment, not source files. |
-| `examples/fullstack/cdk-app.ts` | Reads `FULLSTACK_SESSION_PASSWORD` from the deploy shell, validates length ≥32, and passes it to `TanStackStartExampleStack`; fails synthesis with a clear error if absent. |
+| `examples/fullstack/cdk-app.ts` | Reads `FULLSTACK_SESSION_PASSWORD` from the deploy shell, validates length ≥32, and passes it to `TanStackStartExampleStack`; fails synthesis with a clear error if absent. This gates all three example stacks in the shared CDK app, which is acceptable for this demo but should be documented in the README. |
 
 Data flow: login form → `loginFn` → demo user digest check → `session.save()` writes encrypted `app-session` cookie →
 subsequent request root `fetchUser` reads cookie into route context → `_authed` guard admits `/profile` or renders
@@ -77,9 +77,10 @@ login. Logout destroys the cookie and redirects.
 
 ## Testing
 
-Existing tests in `test/fullstack-tanstack-start.test.ts` remain (staged artifact layout, synthesis, extracted ZIP
+The assertions in `test/fullstack-tanstack-start.test.ts` remain (staged artifact layout, synthesis, extracted ZIP
 startup, SSR, `/api/square` valid/invalid, navigation, hashed asset, mutable public file, probe identity, launcher
-endpoint/error cases). Add:
+endpoint/error cases), but the harness must be updated: construct `TanStackStartExampleStack` with the new session
+password input, and pass `SESSION_PASSWORD`/`NODE_ENV=production` through `startServer`'s `env` option. Add:
 
 - synthesis asserts `SESSION_PASSWORD` and `NODE_ENV=production` environment variables and a rejection for a
   missing/short secret;
