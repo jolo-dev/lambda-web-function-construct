@@ -2,6 +2,7 @@ import {
 	WebFunctionAuthType,
 	WebFunctionEndpointType,
 	type WebFunctionProps,
+	type WebFunctionArtifactOptions,
 	type WebFunctionCognitoOptions,
 } from "../../src";
 
@@ -39,6 +40,14 @@ const cognito: WebFunctionCognitoOptions = {
 	callbackUrls: ["http://localhost:5173/auth/callback"],
 };
 const withCognito: WebFunctionProps = { ...valid, cognito };
+const artifact: WebFunctionArtifactOptions = { directory: "dist", entrypoint: "server/index.mjs" };
+const withArtifact: WebFunctionProps = {
+	functionName: "artifact",
+	endpointName: "prod",
+	authType: WebFunctionAuthType.IAM_AUTH,
+	endpointType: WebFunctionEndpointType.HOME_REGION,
+	artifact,
+};
 const invalidCognito: WebFunctionProps = {
 	...valid,
 	cognito: {

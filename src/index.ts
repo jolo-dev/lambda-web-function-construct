@@ -1,5 +1,6 @@
 export {
 	WebFunction,
+	type WebFunctionArtifactOptions,
 	type WebFunctionCognitoOptions,
 	type WebFunctionProps,
 } from "./web-function";
