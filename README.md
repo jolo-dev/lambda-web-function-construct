@@ -99,6 +99,10 @@ CDK library, JSII, and JSII packaging versions are managed by `package.json` and
 
 `bun run build` invokes the local JSII compiler and emits the `.jsii` assembly used by Construct Hub to generate language-aware API documentation.
 
+## Fullstack framework artifacts
+
+Build and smoke-test tooling for the planned Next.js, Nuxt, and TanStack Start examples lives in [`examples/fullstack/shared`](examples/fullstack/shared/README.md). `build-arm64.sh` builds a Linux Arm64 artifact in a Node.js 24 container and requires a running Docker daemon. `build-native.sh` is a host build for iteration only. Neither runs during CDK synthesis. The arm64 build has not been verified yet, and its image digest is still pending.
+
 ## Web Functions Benchmark
 
 Start with **[Web Functions Benchmark](examples/benchmark/WEB_FUNCTIONS_BENCHMARK.md)**,
