@@ -63,7 +63,7 @@ bash examples/fullstack/shared/build-arm64-artifacts.sh
 
 ## Known open gates before claiming deployability
 
-- Live CloudFront acceptance of the revised **1-second, Authorization-keyed** dynamic cache policy. The original all-zero-TTL policy was rejected live; cross-identity reuse remains forbidden, and same-identity reuse for ≤1 second is approved. The operator reversed the temporary `ACCEPT` decision and requested `KEYALL`: all cookies and query strings are also cache-key components, so distinct cookie/query variants cannot share the 1-second entry (live re-verification pending).
+- Live CloudFront acceptance of the revised **1-second, Authorization-keyed** dynamic cache policy. The original all-zero-TTL policy was rejected live; cross-identity reuse remains forbidden, and same-identity reuse for ≤1 second is approved. The operator reversed the temporary `ACCEPT` decision and requested `KEYALL`: all cookies and query strings are also cache-key components. A bounded Next.js live probe verified distinct Authorization/cookie/query combinations miss while exact repeats hit within 1 second.
 - Real Lambda acceptance of the resource policy shape (function ARN as `ResourceArn`, endpoint ARN in statement `Resource`, distribution-scoped `aws:SourceArn`).
 - Correct static `Content-Type` from implicit `aws s3 sync` MIME inference.
 - End-to-end forwarding/origin behavior (`Host`, `X-Forwarded-*`, server-action/redirect origin checks) behind CloudFront.

@@ -179,7 +179,7 @@ For each deployed example verify:
 - Browser hydration, navigation, and the framework-native mutation work through CloudFront.
 - GET and POST preserve viewer authorization; cookies and query strings reach dynamic code correctly on a cache miss.
 - Distinct dynamic requests with different Authorization values are not served from a shared cache entry; the 1-second Authorization-keyed micro-cache may reuse a response only for the same identity. Verified live with distinct Authorization GET/POST probes.
-- **`KEYALL` (2026-11-18):** all cookies and all query strings are part of the cache key alongside Authorization, so distinct cookie/query variants do not share a cached response within the 1-second window. This supersedes the earlier temporary `ACCEPT` decision; cookie/query cache isolation is claimed subject to live re-verification.
+- **`KEYALL` (2026-11-18):** all cookies and all query strings are part of the cache key alongside Authorization, so distinct cookie/query variants do not share a cached response within the 1-second window. This supersedes the earlier temporary `ACCEPT` decision; cookie/query cache isolation was verified in the bounded Next.js live probe (distinct combinations Miss, exact repeat Hit within 1 second).
 - A static object is served successfully, produces a subsequent cache hit, has correct content type/cache headers, and remains inaccessible directly from S3.
 - Unsigned direct Web Function access is rejected; CloudFront-signed origin access succeeds.
 - Assets from a previous build remain available after an update.
