@@ -263,6 +263,7 @@ export class WebFunction extends Construct {
 	/** Managed login domain created only when cognito is configured. */
 	public readonly userPoolDomain?: UserPoolDomain;
 	private readonly constructId: string;
+	private readonly revision: CfnWebFunctionRevision;
 	private deliveryOwner?: Construct;
 
 	constructor(scope: Construct, id: string, props: WebFunctionProps) {
@@ -340,6 +341,7 @@ export class WebFunction extends Construct {
 
 		// Create the immutable code revision before routing traffic to it.
 		const webFunctionRevision = this.uploadToS3(webProps, webFunction);
+		this.revision = webFunctionRevision;
 
 		// Route the endpoint to the revision created above, not a guessed revision ID.
 		const webFunctionEndpoint = new CfnWebFunctionEndpoint(
@@ -393,11 +395,16 @@ export class WebFunction extends Construct {
 
 	/**
 	 * Records the WebFunctionDelivery that owns this Web Function's CloudFront invoke policy.
-	 * Call only after the owner's constructs are fully created, so a failed construction leaves no claim.
+	 * Also orders the Revision after the delivery's static uploads, so assets are present before
+	 * the Revision can be routed. Call only after the owner's constructs are fully created, so a
+	 * failed construction leaves no claim.
 	 * @internal
 	 */
-	public _attachDelivery(owner: Construct): void {
+	public _attachDelivery(owner: Construct, staticUploads: Construct[]): void {
 		this._assertDeliveryAvailable();
+		for (const upload of staticUploads) {
+			this.revision.node.addDependency(upload);
+		}
 		this.deliveryOwner = owner;
 	}
 

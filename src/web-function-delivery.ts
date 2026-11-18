@@ -1,23 +1,33 @@
 import { statSync } from "node:fs";
 import path from "node:path";
-import { Names, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { Duration, Names, RemovalPolicy, Stack } from "aws-cdk-lib";
 import {
 	AccessLevel,
 	AllowedMethods,
+	CacheHeaderBehavior,
 	CachePolicy,
 	CfnOriginAccessControl,
 	Distribution,
-	type BehaviorOptions,
+	Function as CloudFrontFunction,
+	FunctionCode,
+	FunctionEventType,
+	FunctionRuntime,
+	HeadersFrameOption,
 	OriginProtocolPolicy,
+	OriginRequestPolicy,
+	ResponseHeadersPolicy,
+	type BehaviorOptions,
 	ViewerProtocolPolicy,
 } from "aws-cdk-lib/aws-cloudfront";
 import { HttpOrigin, S3BucketOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
 import { CfnResourcePolicy } from "aws-cdk-lib/aws-lambda";
 import { BlockPublicAccess, Bucket, BucketEncryption } from "aws-cdk-lib/aws-s3";
+import { BucketDeployment, CacheControl, Source } from "aws-cdk-lib/aws-s3-deployment";
 import { Construct } from "constructs";
 import { z } from "zod";
 import type { WebFunction } from "./web-function";
 import { WebFunctionAuthType, WebFunctionEndpointType } from "./web-function-options";
+import { proxyHeadersFunctionCode } from "./web-function-proxy-headers";
 
 /** An immutable browser asset directory served under a CloudFront path prefix. */
 export interface WebFunctionStaticAssetMapping {
@@ -190,13 +200,56 @@ export class WebFunctionDelivery extends Construct {
 			originAccessLevels: [AccessLevel.READ],
 		});
 
+		const immutableAssetTtl = Duration.days(365);
+		const staticAssetCachePolicy = new CachePolicy(this, "StaticAssetCachePolicy", {
+			defaultTtl: immutableAssetTtl,
+			maxTtl: immutableAssetTtl,
+		});
+		// Zero TTLs keep dynamic responses out of the shared cache even when the origin sends cache headers.
+		// The Web Function OAC guide requires Authorization in the cache policy of every behavior that uses the origin.
+		const dynamicCachePolicy = new CachePolicy(this, "DynamicCachePolicy", {
+			defaultTtl: Duration.seconds(0),
+			minTtl: Duration.seconds(0),
+			maxTtl: Duration.seconds(0),
+			headerBehavior: CacheHeaderBehavior.allowList("Authorization"),
+		});
+		const proxyHeadersFunction = new CloudFrontFunction(this, "ProxyHeadersFunction", {
+			code: FunctionCode.fromInline(proxyHeadersFunctionCode),
+			runtime: FunctionRuntime.JS_2_0,
+		});
+		const responseHeadersPolicy = new ResponseHeadersPolicy(this, "SecurityHeadersPolicy", {
+			securityHeadersBehavior: {
+				strictTransportSecurity: { accessControlMaxAge: Duration.days(365), override: true },
+				contentTypeOptions: { override: true },
+				frameOptions: { frameOption: HeadersFrameOption.DENY, override: true },
+			},
+		});
+
+		// Uploads depend on no distribution, so the Revision can wait for them without a cycle. Pruning is
+		// disabled and no distribution is given, so earlier hashed objects are neither deleted nor invalidated.
+		const staticUploads: BucketDeployment[] = [];
 		const additionalBehaviors: Record<string, BehaviorOptions> = {};
 		for (const mapping of parsed.staticAssets) {
+			staticUploads.push(
+				new BucketDeployment(this, `StaticAssets${mapping.urlPrefix}`, {
+					sources: [Source.asset(path.resolve(mapping.directory))],
+					destinationBucket: this.assetBucket,
+					destinationKeyPrefix: mapping.urlPrefix.slice(1, -1),
+					prune: false,
+					retainOnDelete: removalPolicy === RemovalPolicy.RETAIN,
+					cacheControl: [
+						CacheControl.setPublic(),
+						CacheControl.maxAge(immutableAssetTtl),
+						CacheControl.immutable(),
+					],
+				}),
+			);
 			additionalBehaviors[`${mapping.urlPrefix}*`] = {
 				origin: assetOrigin,
 				viewerProtocolPolicy: ViewerProtocolPolicy.HTTPS_ONLY,
 				allowedMethods: AllowedMethods.ALLOW_GET_HEAD,
-				cachePolicy: CachePolicy.CACHING_OPTIMIZED,
+				cachePolicy: staticAssetCachePolicy,
+				responseHeadersPolicy,
 			};
 		}
 		this.distribution = new Distribution(this, "Distribution", {
@@ -204,7 +257,12 @@ export class WebFunctionDelivery extends Construct {
 				origin: webFunctionOrigin,
 				viewerProtocolPolicy: ViewerProtocolPolicy.HTTPS_ONLY,
 				allowedMethods: AllowedMethods.ALLOW_ALL,
-				cachePolicy: CachePolicy.CACHING_DISABLED,
+				cachePolicy: dynamicCachePolicy,
+				originRequestPolicy: OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+				responseHeadersPolicy,
+				functionAssociations: [
+					{ function: proxyHeadersFunction, eventType: FunctionEventType.VIEWER_REQUEST },
+				],
 			},
 			additionalBehaviors,
 		});
@@ -227,6 +285,6 @@ export class WebFunctionDelivery extends Construct {
 				],
 			},
 		});
-		webFunction._attachDelivery(this);
+		webFunction._attachDelivery(this, staticUploads);
 	}
 }

@@ -104,6 +104,7 @@ test("rejects a missing static asset directory", () => {
 test.each([
   ["the root prefix", "/"],
   ["a wildcard prefix", "/_next/*"],
+  ["a single-character wildcard", "/_next/static?/"],
   ["a traversal segment", "/_next/../secret/"],
   ["a relative prefix", "_next/static/"],
   ["an empty segment", "/_next//static/"],
@@ -257,7 +258,6 @@ test("synthesizes a private CloudFront delivery for one IAM HomeRegion static ma
       DefaultCacheBehavior: {
         AllowedMethods: ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"],
         ViewerProtocolPolicy: "https-only",
-        CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
       },
       CacheBehaviors: [
         Match.objectLike({
@@ -347,6 +347,14 @@ test("retains the asset bucket by default and destroys its objects only when req
   disposableTemplate.resourceCountIs("Custom::S3AutoDeleteObjects", 2);
   expect(Object.values(disposableTemplate.findResources("AWS::S3::Bucket")).map((bucket) => bucket.DeletionPolicy))
     .toEqual(["Delete", "Delete"]);
+  retainedTemplate.hasResourceProperties("Custom::CDKBucketDeployment", {
+    DestinationBucketKeyPrefix: "_next/static",
+    RetainOnDelete: true,
+  });
+  disposableTemplate.hasResourceProperties("Custom::CDKBucketDeployment", {
+    DestinationBucketKeyPrefix: "_next/static",
+    RetainOnDelete: false,
+  });
 });
 
 test("rejects an asset bucket removal policy other than RETAIN or DESTROY", () => {
@@ -381,4 +389,321 @@ test("normalizes a static prefix without a trailing slash and shares one private
   });
   template.resourceCountIs("AWS::Lambda::ResourcePolicy", 1);
   template.resourceCountIs("AWS::Lambda::Permission", 0);
+});
+
+type CloudFormationTemplate = {
+  Resources: Record<string, { DependsOn?: string | string[]; Properties?: unknown; Type: string }>;
+};
+
+/** Edges from each resource to the resources it names with DependsOn, Ref, or Fn::GetAtt. */
+function dependencyGraph(template: CloudFormationTemplate): Map<string, Set<string>> {
+  const graph = new Map<string, Set<string>>();
+  for (const [logicalId, resource] of Object.entries(template.Resources)) {
+    const targets = new Set<string>([resource.DependsOn ?? []].flat());
+    const visit = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+      } else if (value !== null && typeof value === "object") {
+        for (const [key, nested] of Object.entries(value)) {
+          if (key === "Ref" && typeof nested === "string") targets.add(nested);
+          else if (key === "Fn::GetAtt" && Array.isArray(nested)) targets.add(String(nested[0]));
+          else visit(nested);
+        }
+      }
+    };
+    visit(resource.Properties);
+    graph.set(logicalId, new Set([...targets].filter((target) => target in template.Resources)));
+  }
+  return graph;
+}
+
+function reachableFrom(graph: Map<string, Set<string>>, start: string): Set<string> {
+  const seen = new Set<string>();
+  const pending = [start];
+  while (pending.length > 0) {
+    for (const next of graph.get(pending.pop()!) ?? []) {
+      if (!seen.has(next)) {
+        seen.add(next);
+        pending.push(next);
+      }
+    }
+  }
+  return seen;
+}
+
+/** Returns one dependency cycle as a list of logical IDs, or undefined when the graph is acyclic. */
+function findCycle(graph: Map<string, Set<string>>): string[] | undefined {
+  const finished = new Set<string>();
+  const onPath: string[] = [];
+  const visit = (node: string): string[] | undefined => {
+    const position = onPath.indexOf(node);
+    if (position !== -1) return [...onPath.slice(position), node];
+    if (finished.has(node)) return undefined;
+    onPath.push(node);
+    for (const next of graph.get(node) ?? []) {
+      const cycle = visit(next);
+      if (cycle) return cycle;
+    }
+    onPath.pop();
+    finished.add(node);
+    return undefined;
+  };
+  for (const node of graph.keys()) {
+    const cycle = visit(node);
+    if (cycle) return cycle;
+  }
+  return undefined;
+}
+
+/** Runs a synthesized CloudFront Function's source exactly as deployed, not a reimplementation. */
+function deployedViewerRequestHandler(template: Template): (event: unknown) => any {
+  const [functionResource] = Object.values(template.findResources("AWS::CloudFront::Function"));
+  const code = (functionResource as { Properties: { FunctionCode: string } }).Properties.FunctionCode;
+  return new Function(`${code}\nreturn handler;`)();
+}
+
+function staticUploads(template: Template, urlKeyPrefix: string): string[] {
+  return Object.entries(template.findResources("Custom::CDKBucketDeployment"))
+    .filter(([, resource]) => resource.Properties.DestinationBucketKeyPrefix === urlKeyPrefix)
+    .map(([logicalId]) => logicalId);
+}
+
+function deliveryStack(name: string, directory = staticDirectory): Stack {
+  const stack = new Stack(new App(), name);
+  new WebFunctionDelivery(stack, "Delivery", {
+    webFunction: iamWebFunction(stack),
+    staticAssets: [{ directory, urlPrefix: "/_next/static/" }],
+  });
+  return stack;
+}
+
+// AWS managed AllViewerExceptHostHeader origin request policy.
+const allViewerExceptHostHeaderPolicyId = "b689b0a8-53d0-40ab-baf2-68738e2966ac";
+const dynamicMethods = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"];
+
+test("routes dynamic traffic to the Web Function endpoint with the viewer Host excluded", () => {
+  const stack = deliveryStack("DynamicOriginStack");
+  const template = Template.fromStack(stack);
+  const endpointId = logicalIdWhere(template, "AWS::Lambda::WebFunctionEndpoint", () => true);
+  const lambdaOacId = logicalIdWhere(template, "AWS::CloudFront::OriginAccessControl", (resource) =>
+    resource.Properties.OriginAccessControlConfig.OriginAccessControlOriginType === "lambda");
+
+  template.hasResourceProperties("AWS::CloudFront::Distribution", {
+    DistributionConfig: {
+      DefaultCacheBehavior: Match.objectLike({
+        TargetOriginId: Match.anyValue(),
+        AllowedMethods: dynamicMethods,
+        ViewerProtocolPolicy: "https-only",
+        OriginRequestPolicyId: allViewerExceptHostHeaderPolicyId,
+      }),
+      Origins: Match.arrayWith([
+        Match.objectLike({
+          DomainName: { "Fn::GetAtt": [endpointId, "DomainName"] },
+          OriginAccessControlId: { "Fn::GetAtt": [lambdaOacId, "Id"] },
+          CustomOriginConfig: Match.objectLike({ OriginProtocolPolicy: "https-only" }),
+        }),
+      ]),
+    },
+  });
+});
+
+test("keys the dynamic cache policy only on Authorization with every TTL at zero", () => {
+  const template = Template.fromStack(deliveryStack("DynamicCachePolicyStack"));
+  const dynamicPolicyId = logicalIdWhere(template, "AWS::CloudFront::CachePolicy", (resource) =>
+    resource.Properties.CachePolicyConfig.DefaultTTL === 0);
+
+  template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
+    CachePolicyConfig: {
+      DefaultTTL: 0,
+      MinTTL: 0,
+      MaxTTL: 0,
+      ParametersInCacheKeyAndForwardedToOrigin: {
+        HeadersConfig: { HeaderBehavior: "whitelist", Headers: ["Authorization"] },
+        CookiesConfig: { CookieBehavior: "none" },
+        QueryStringsConfig: { QueryStringBehavior: "none" },
+        EnableAcceptEncodingGzip: false,
+        EnableAcceptEncodingBrotli: false,
+      },
+    },
+  });
+  template.hasResourceProperties("AWS::CloudFront::Distribution", {
+    DistributionConfig: {
+      DefaultCacheBehavior: Match.objectLike({
+        CachePolicyId: { Ref: dynamicPolicyId },
+      }),
+    },
+  });
+});
+
+test("attaches a viewer-request function that overwrites the forwarded host and protocol", () => {
+  const template = Template.fromStack(deliveryStack("ProxyHeadersStack"));
+  const functionId = logicalIdWhere(template, "AWS::CloudFront::Function", () => true);
+
+  template.hasResourceProperties("AWS::CloudFront::Distribution", {
+    DistributionConfig: {
+      DefaultCacheBehavior: Match.objectLike({
+        FunctionAssociations: [
+          {
+            EventType: "viewer-request",
+            FunctionARN: { "Fn::GetAtt": [functionId, "FunctionARN"] },
+          },
+        ],
+      }),
+    },
+  });
+  // Static behaviors need no request rewriting; the proxy context applies to the Web Function origin only.
+  const distribution = Object.values(template.findResources("AWS::CloudFront::Distribution"))[0]!;
+  const staticBehavior = distribution.Properties.DistributionConfig.CacheBehaviors[0];
+  expect(staticBehavior.FunctionAssociations).toBeUndefined();
+});
+
+test("the deployed viewer-request function replaces client-supplied forwarded headers with the viewer context", () => {
+  const handler = deployedViewerRequestHandler(Template.fromStack(deliveryStack("ProxyHandlerStack")));
+  const forwarded = handler({
+    request: {
+      uri: "/dashboard",
+      headers: {
+        host: { value: "d111abc.cloudfront.net" },
+        "x-forwarded-host": { value: "attacker.example" },
+        "x-forwarded-proto": { value: "http" },
+      },
+    },
+  });
+
+  expect(forwarded.uri).toBe("/dashboard");
+  expect(forwarded.headers["x-forwarded-host"]).toEqual({ value: "d111abc.cloudfront.net" });
+  expect(forwarded.headers["x-forwarded-proto"]).toEqual({ value: "https" });
+});
+
+test("the deployed viewer-request function refuses a request without a viewer Host", () => {
+  const handler = deployedViewerRequestHandler(Template.fromStack(deliveryStack("ProxyNoHostStack")));
+  expect(handler({ request: { uri: "/", headers: {} } })).toEqual({
+    statusCode: 400,
+    statusDescription: "Bad Request",
+  });
+});
+
+test("forwards cookies, query strings, and dynamic headers through the managed AllViewerExceptHostHeader policy", () => {
+  const template = Template.fromStack(deliveryStack("DynamicForwardingPolicyStack"));
+  // The managed policy forwards all viewer headers except Host, plus all cookies and query strings.
+  // Cookies and query strings are not part of the cache key because the dynamic TTL is zero.
+  template.hasResourceProperties("AWS::CloudFront::Distribution", {
+    DistributionConfig: {
+      DefaultCacheBehavior: Match.objectLike({ OriginRequestPolicyId: allViewerExceptHostHeaderPolicyId }),
+    },
+  });
+  expect(Object.values(template.findResources("AWS::CloudFront::OriginRequestPolicy"))).toEqual([]);
+});
+
+test("applies HSTS, nosniff, and framing headers without a guessed content security policy", () => {
+  const template = Template.fromStack(deliveryStack("SecurityHeadersStack"));
+  const policyId = logicalIdWhere(template, "AWS::CloudFront::ResponseHeadersPolicy", () => true);
+
+  template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+    ResponseHeadersPolicyConfig: {
+      SecurityHeadersConfig: Match.objectLike({
+        StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, Override: true },
+        ContentTypeOptions: { Override: true },
+        FrameOptions: { FrameOption: "DENY", Override: true },
+        ContentSecurityPolicy: Match.absent(),
+      }),
+    },
+  });
+  template.hasResourceProperties("AWS::CloudFront::Distribution", {
+    DistributionConfig: {
+      DefaultCacheBehavior: Match.objectLike({ ResponseHeadersPolicyId: { Ref: policyId } }),
+      CacheBehaviors: [Match.objectLike({ ResponseHeadersPolicyId: { Ref: policyId } })],
+    },
+  });
+});
+
+test("caches static assets for one immutable year without forwarding cookies, query strings, or Authorization", () => {
+  const template = Template.fromStack(deliveryStack("StaticCachePolicyStack"));
+  const staticPolicyId = logicalIdWhere(template, "AWS::CloudFront::CachePolicy", (resource) =>
+    resource.Properties.CachePolicyConfig.DefaultTTL === 31536000);
+
+  template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
+    CachePolicyConfig: {
+      DefaultTTL: 31536000,
+      MaxTTL: 31536000,
+      ParametersInCacheKeyAndForwardedToOrigin: {
+        HeadersConfig: { HeaderBehavior: "none" },
+        CookiesConfig: { CookieBehavior: "none" },
+        QueryStringsConfig: { QueryStringBehavior: "none" },
+      },
+    },
+  });
+  template.hasResourceProperties("AWS::CloudFront::Distribution", {
+    DistributionConfig: {
+      CacheBehaviors: [
+        Match.objectLike({
+          PathPattern: "/_next/static/*",
+          AllowedMethods: ["GET", "HEAD"],
+          ViewerProtocolPolicy: "https-only",
+          CachePolicyId: { Ref: staticPolicyId },
+          OriginRequestPolicyId: Match.absent(),
+        }),
+      ],
+    },
+  });
+});
+
+test("uploads each static mapping with pruning disabled, immutable cache-control, and no invalidation", () => {
+  const template = Template.fromStack(deliveryStack("StaticUploadStack"));
+
+  expect(staticUploads(template, "_next/static")).toHaveLength(1);
+  template.hasResourceProperties("Custom::CDKBucketDeployment", {
+    DestinationBucketKeyPrefix: "_next/static",
+    Prune: false,
+    RetainOnDelete: true,
+    SystemMetadata: { "cache-control": "public, max-age=31536000, immutable" },
+    DistributionId: Match.absent(),
+  });
+});
+
+test("keeps a previous build's keys configured with pruning disabled after a second build", () => {
+  const buildOne = mkdtempSync(path.join(fixture, "build-one-"));
+  writeFileSync(path.join(buildOne, "chunk-1.js"), "export const one = 1;");
+  const buildTwo = mkdtempSync(path.join(fixture, "build-two-"));
+  writeFileSync(path.join(buildTwo, "chunk-2.js"), "export const two = 2;");
+
+  const first = Template.fromStack(deliveryStack("FirstBuildStack", buildOne));
+  const second = Template.fromStack(deliveryStack("SecondBuildStack", buildTwo));
+  const firstUpload = Object.values(first.findResources("Custom::CDKBucketDeployment")).find(
+    (resource) => resource.Properties.DestinationBucketKeyPrefix === "_next/static",
+  )!;
+  const secondUpload = Object.values(second.findResources("Custom::CDKBucketDeployment")).find(
+    (resource) => resource.Properties.DestinationBucketKeyPrefix === "_next/static",
+  )!;
+
+  // Synthesized configuration only: S3 retention of the previous objects is verified live, not here.
+  for (const upload of [firstUpload, secondUpload]) {
+    expect(upload.Properties.Prune).toBe(false);
+    expect(upload.Properties.RetainOnDelete).toBe(true);
+    expect(upload.Properties.DistributionId).toBeUndefined();
+  }
+  expect(firstUpload.Properties.SourceObjectKeys).not.toEqual(secondUpload.Properties.SourceObjectKeys);
+});
+
+test("orders the Revision after every static upload and keeps uploads independent of the distribution", () => {
+  const template = Template.fromStack(deliveryStack("OrderingStack"));
+  const json = template.toJSON() as CloudFormationTemplate;
+  const graph = dependencyGraph(json);
+  const revisionId = logicalIdWhere(template, "AWS::Lambda::WebFunctionRevision", () => true);
+  const endpointId = logicalIdWhere(template, "AWS::Lambda::WebFunctionEndpoint", () => true);
+  const distributionId = logicalIdWhere(template, "AWS::CloudFront::Distribution", () => true);
+  const uploadIds = staticUploads(template, "_next/static");
+
+  expect(uploadIds).toHaveLength(1);
+  expect(graph.get(revisionId)).toContain(uploadIds[0]);
+  expect(graph.get(endpointId)).toContain(revisionId);
+  for (const uploadId of uploadIds) {
+    expect(reachableFrom(graph, uploadId).has(distributionId)).toBe(false);
+  }
+  expect(JSON.stringify(json.Resources[revisionId])).not.toContain(distributionId);
+});
+
+test("synthesizes an acyclic CloudFormation dependency graph", () => {
+  const template = Template.fromStack(deliveryStack("AcyclicStack"));
+  expect(findCycle(dependencyGraph(template.toJSON() as CloudFormationTemplate))).toBeUndefined();
 });
