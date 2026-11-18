@@ -95,4 +95,12 @@ Cleanup again verified: stack destroyed, distribution `E253VZREM7LAJP` no longer
 
 Bounded HTTP checks (≤100 requests) passed: unsigned direct endpoint 403; SSR `/` 200 with request-time timestamp (React comment separator before the ISO string); `/about` 200; `/__probe/identity` 404 without marker; `/robots.txt` 200 `text/plain; charset=utf-8`; hashed `/assets/index-*.js` 200 `text/javascript` with `max-age=31536000, immutable`; 404 error path preserved; native `/api/square` POST returned `{"result":"49"}` for `7` and 400 `{"error":"Value must be a number from 0 to 1000"}` for `-1`. Cache-key behavior matched KEYALL: Authorization A/Cookie/query variants each Miss, exact repeated key Miss then Hit within 1 second.
 
-Cleanup verified: stack destroyed, distribution and asset bucket gone, and the three bootstrap asset objects from this deployment (33 MB revision ZIP, 103 KB static ZIP, 32 KB template JSON) deleted and confirmed absent. Nuxt was not deployed; browser hydration/click, streaming timing, and two-build old-asset retention remain unverified.
+Cleanup verified: stack destroyed, distribution and asset bucket gone, and the three bootstrap asset objects from this deployment (33 MB revision ZIP, 103 KB static ZIP, 32 KB template JSON) deleted and confirmed absent. Nuxt was not deployed at that point; browser hydration/click, streaming timing, and two-build old-asset retention remain unverified.
+
+### Nuxt live rollout (operator requested: retain the deployment)
+
+The operator explicitly approved a Nuxt live rollout and asked **not to clean it up**. `FullstackNuxt` was deployed with the Linux Arm64 artifact and KEYALL policy; CloudFront `d3d631mv731ey1.cloudfront.net`, distribution `E2GGYCE0CPDU1S`, endpoint `ml9d6vhqg609yml4.h73.lambda-web.eu-central-1.on.aws`, stack ARN `arn:aws:cloudformation:eu-central-1:246350246460:stack/FullstackNuxt/02896620-e394-11f1-bd96-0affdc2e5557`.
+
+Bounded probes passed: unsigned direct 403; SSR 200 with request-time timestamp; `/about` 200; `/__probe/identity` 404 without marker; `robots.txt` 200 `text/plain; charset=utf-8`; `/_nuxt/Dk7r3ghq.js` 200 `text/javascript` with immutable caching; 404 error path; native `/api/square` valid `{"result":"7 squared is 49"}` and invalid 400 validation error. Distinct Authorization/cookie/query combinations each Miss; exact repeat Miss → Hit within 1 second.
+
+The stack was **intentionally retained** with all resources and bootstrap asset objects. Identifiers, inspection commands, ongoing-cost warning, and the future cleanup command are in `examples/fullstack/shared/live-resources.md`.

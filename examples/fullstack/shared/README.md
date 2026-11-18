@@ -8,7 +8,8 @@ Support code for the Next.js, Nuxt, and TanStack Start Web Function examples. It
 - `build-arm64.sh`: reproducible Linux Arm64 build in a pinned Node.js 24 container (requires running Docker).
 - `build-arm64-artifacts.sh`: builds all three examples for Linux Arm64, installing pinned Bun 1.4.4 and frozen dependencies inside the container, then running each framework's `build-artifact.mjs`.
 - `build-native.sh`: host build for rapid iteration. Output is development evidence only, not deployment evidence.
-- `aws-checklist.md`: **gated** live-AWS deployment/cleanup checklist (**NOT APPROVED / NOT RUN**).
+- `aws-checklist.md`: gated live-AWS deployment/cleanup checklist with results for the bounded Next.js, TanStack Start, and Nuxt probes.
+- `live-resources.md`: **retained** Nuxt deployment identifiers, inspection URLs/commands, cost warning, and future cleanup command (operator asked not to clean it up).
 
 Tests: `test/fullstack-probe.test.ts`.
 
