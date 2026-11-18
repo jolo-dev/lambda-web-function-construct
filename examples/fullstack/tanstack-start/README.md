@@ -51,8 +51,8 @@ The test synthesizes the stack, extracts the Lambda ZIP, resolves literal runtim
 
 ## Limitations and unverified behavior
 
-- **Linux Arm64 artifact proof is local only.** The artifact was built in a pinned `linux/arm64` Node 24.22.1 container (Bun 1.4.4, frozen lockfile), with ARM aarch64 native modules, and started there serving SSR and `/api/square`; **AWS deployment is not run**.
+- **Linux Arm64 artifact proof is local plus bounded live.** The artifact was built in a pinned `linux/arm64` Node 24.22.1 container (Bun 1.4.4, frozen lockfile), with ARM aarch64 native modules, and a bounded live `FullstackTanStackStart` deployment in `eu-central-1` passed SSR, navigation, native mutation, asset, and cache-key probes before full cleanup.
 - **No browser hydration/click proof in this task.** HTTP and RSC-like navigation checks only; full browser interaction not verified.
 - **Streaming:** the server uses `defaultStreamHandler`; incremental streaming delivery to CloudFront/Lambda was not separately measured.
 - Does not demonstrate ISR/cache consistency, deployment-skew-safe old server actions, image optimization, edge runtime, WebSockets, or multi-region behavior.
-- Live CloudFront acceptance of the revised 1-second Authorization-keyed dynamic policy and the Lambda resource-policy shape remain deployment-gated (the original zero-TTL policy was rejected live). See `docs/superpowers/plans/2026-11-18-fullstack-preflight.md` and the plan’s live-AWS gate.
+- The revised 1-second `KEYALL` cache policy (Authorization + all cookies + all query strings) was accepted and verified live; the original zero-TTL policy was rejected. See `docs/superpowers/plans/2026-11-18-fullstack-preflight.md` for the TanStack live results.

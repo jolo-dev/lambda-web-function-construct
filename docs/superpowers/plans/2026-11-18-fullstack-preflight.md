@@ -87,4 +87,12 @@ A fresh bounded `FullstackNextjs` deployment succeeded in `eu-central-1` (profil
 
 Bounded HTTP re-probe (≤100 requests): unsigned direct endpoint 403; SSR 200 with request-time timestamp; `/about` 200; `/robots.txt` 200 `text/plain; charset=UTF-8`; hashed `/_next/static/*` 200 `text/javascript`, immutable cache-control; 404 error path preserved. Cache-key behavior: `Authorization A + /`, `A + /?probe=abc123`, `A + Cookie: session=abc123 + /`, and `Authorization B + /` each returned **Miss**; repeating the exact `A + cookie + query` combination returned Miss then **Hit** within the 1-second window. Next server action POST with `Authorization` + cookie + query returned `7 squared is 49` for valid input and rejected `-1` (both Miss). Distinct cookie/query variants therefore no longer share a cache entry.
 
-Cleanup again verified: stack destroyed, distribution `E253VZREM7LAJP` no longer exists, and the three bootstrap asset objects from this deployment were deleted and confirmed gone. No Nuxt/TanStack deployment, browser hydration, streaming measurement, or two-build old-asset test was run.
+Cleanup again verified: stack destroyed, distribution `E253VZREM7LAJP` no longer exists, and the three bootstrap asset objects from this deployment were deleted and confirmed gone. No Nuxt deployment, browser hydration, streaming measurement, or two-build old-asset test was run.
+
+### TanStack Start live rollout (operator-approved, same bounded plan)
+
+`FullstackTanStackStart` was deployed in `eu-central-1` (profile `jolo`, account `246350246460`) using the existing Linux Arm64 artifact and the KEYALL policy. CloudFront `d2y1swiy95ysn1.cloudfront.net`, Web Function endpoint `kv35jmd1y07pw4v2.h73.lambda-web.eu-central-1.on.aws`, distribution `E2RH2UVK1MSO8M`.
+
+Bounded HTTP checks (≤100 requests) passed: unsigned direct endpoint 403; SSR `/` 200 with request-time timestamp (React comment separator before the ISO string); `/about` 200; `/__probe/identity` 404 without marker; `/robots.txt` 200 `text/plain; charset=utf-8`; hashed `/assets/index-*.js` 200 `text/javascript` with `max-age=31536000, immutable`; 404 error path preserved; native `/api/square` POST returned `{"result":"49"}` for `7` and 400 `{"error":"Value must be a number from 0 to 1000"}` for `-1`. Cache-key behavior matched KEYALL: Authorization A/Cookie/query variants each Miss, exact repeated key Miss then Hit within 1 second.
+
+Cleanup verified: stack destroyed, distribution and asset bucket gone, and the three bootstrap asset objects from this deployment (33 MB revision ZIP, 103 KB static ZIP, 32 KB template JSON) deleted and confirmed absent. Nuxt was not deployed; browser hydration/click, streaming timing, and two-build old-asset retention remain unverified.
