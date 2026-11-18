@@ -177,8 +177,9 @@ For each deployed example verify:
 
 - CloudFront HTTPS serves request-time SSR and correct public-origin redirects.
 - Browser hydration, navigation, and the framework-native mutation work through CloudFront.
-- GET and POST preserve viewer authorization; cookies and query strings reach dynamic code correctly.
-- Distinct dynamic requests with different Authorization values are not served from a shared cache entry; the 1-second Authorization-keyed micro-cache may reuse a response only for the same identity. Verify this explicitly with distinct Authorization GET/POST probes.
+- GET and POST preserve viewer authorization; cookies and query strings reach dynamic code correctly on a cache miss.
+- Distinct dynamic requests with different Authorization values are not served from a shared cache entry; the 1-second Authorization-keyed micro-cache may reuse a response only for the same identity. Verified live with distinct Authorization GET/POST probes.
+- **Operator-accepted limitation (`ACCEPT`, 2026-11-18):** within the 1-second window, requests with the same Authorization but different cookies or query strings may be served from the same cache entry and therefore may not reach the origin. The original requirement that cookie/query-distinct requests always be evaluated independently is formally superseded; do not claim full cookie/query cache isolation.
 - A static object is served successfully, produces a subsequent cache hit, has correct content type/cache headers, and remains inaccessible directly from S3.
 - Unsigned direct Web Function access is rejected; CloudFront-signed origin access succeeds.
 - Assets from a previous build remain available after an update.
