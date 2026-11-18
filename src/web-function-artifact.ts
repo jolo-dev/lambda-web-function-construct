@@ -60,7 +60,7 @@ function copyArtifactEntry(
 		} finally {
 			state.activeDirectories.delete(canonicalDirectory);
 		}
-		chmodSync(destination, 0o755);
+		chmodSync(destination, info.mode & 0o7777);
 		utimesSync(destination, NORMALIZED_TIMESTAMP, NORMALIZED_TIMESTAMP);
 	} else if (info.isFile()) {
 		if (info.size > MAX_UNCOMPRESSED_BYTES - state.totalBytes) {
@@ -69,7 +69,7 @@ function copyArtifactEntry(
 		state.totalBytes += info.size;
 		mkdirSync(path.dirname(destination), { recursive: true });
 		copyFile(resolvedSource, destination);
-		chmodSync(destination, info.mode & 0o111 ? 0o755 : 0o644);
+		chmodSync(destination, info.mode & 0o7777);
 		utimesSync(destination, NORMALIZED_TIMESTAMP, NORMALIZED_TIMESTAMP);
 	} else {
 		throw new Error(`Unsupported non-regular artifact entry: ${source}`);

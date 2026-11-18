@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
@@ -151,6 +151,33 @@ test("creates byte-identical ZIPs for identical contents and changes hash when c
   } finally {
     rmSync(directory, { recursive: true, force: true });
     for (const archive of [firstZip, secondZip, changedZip]) rmSync(archive, { force: true });
+  }
+});
+
+test("preserves source file and directory permission bits in the ZIP", () => {
+  const directory = mkdtempSync(path.join(fixture, "permission-artifact-"));
+  const restrictedDirectory = path.join(directory, "restricted");
+  const executableFile = path.join(directory, "run.sh");
+  const restrictedFile = path.join(restrictedDirectory, "secret.txt");
+  const outputZip = path.join(fixture, "permissions.zip");
+  const extracted = mkdtempSync(path.join(fixture, "permissions-extracted-"));
+  try {
+    mkdirSync(restrictedDirectory);
+    writeFileSync(executableFile, "#!/bin/sh\\necho ok\\n");
+    writeFileSync(restrictedFile, "private\\n");
+    chmodSync(restrictedDirectory, 0o750);
+    chmodSync(executableFile, 0o751);
+    chmodSync(restrictedFile, 0o640);
+
+    zipArtifactDirectory(directory, outputZip);
+    execFileSync("unzip", ["-q", outputZip, "-d", extracted]);
+    expect(statSync(path.join(extracted, "run.sh")).mode & 0o777).toBe(0o751);
+    expect(statSync(path.join(extracted, "restricted")).mode & 0o777).toBe(0o750);
+    expect(statSync(path.join(extracted, "restricted", "secret.txt")).mode & 0o777).toBe(0o640);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(extracted, { recursive: true, force: true });
+    rmSync(outputZip, { force: true });
   }
 });
 
