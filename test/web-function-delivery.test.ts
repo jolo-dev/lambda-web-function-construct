@@ -168,12 +168,12 @@ test("releases no delivery claim when a later construction step fails", () => {
   const webFunction = iamWebFunction(stack);
   // The resource policy is the last construction step and the only reader of functionArn.
   const functionArn = webFunction.functionArn;
-  let failNextRead = true;
+  let functionArnReads = 0;
   Object.defineProperty(webFunction, "functionArn", {
     configurable: true,
     get: () => {
-      if (failNextRead) {
-        failNextRead = false;
+      functionArnReads += 1;
+      if (functionArnReads === 1) {
         throw new Error("injected resource policy failure");
       }
       return functionArn;
@@ -184,6 +184,8 @@ test("releases no delivery claim when a later construction step fails", () => {
     webFunction,
     staticAssets: [{ directory: staticDirectory, urlPrefix: "/_next/static/" }],
   })).toThrow("injected resource policy failure");
+  expect(functionArnReads).toBe(1);
+  Template.fromStack(stack).resourceCountIs("AWS::Lambda::ResourcePolicy", 0);
 
   const retried = new WebFunctionDelivery(stack, "RetriedDelivery", {
     webFunction,

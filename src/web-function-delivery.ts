@@ -112,6 +112,8 @@ const WebFunctionDeliveryPropsSchema = z
  *
  * The delivery owns the Web Function's CloudFront invoke policy, so at most one delivery
  * can be attached to a Web Function. Dynamic responses are not cached by CloudFront.
+ * A throwing constructor can leave partially created constructs in the tree, so callers
+ * must discard the app rather than catch the error and continue synthesizing it.
  *
  * ```mermaid
  * architecture-beta
