@@ -1,5 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { lstatSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import {
+	chmodSync,
+	copyFileSync,
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	realpathSync,
+	rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 function isWithinRoot(root: string, candidate: string): boolean {
@@ -7,22 +17,49 @@ function isWithinRoot(root: string, candidate: string): boolean {
 	return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-function assertNoEscapingSymlinks(root: string, directory: string): void {
-	for (const entry of readdirSync(directory, { withFileTypes: true })) {
-		const entryPath = path.join(directory, entry.name);
-		const metadata = lstatSync(entryPath);
-		if (metadata.isSymbolicLink()) {
-			const target = realpathSync(entryPath);
-			if (!isWithinRoot(root, target)) {
-				throw new Error(`Artifact symlink escapes artifact root: ${entryPath}`);
-			}
-		} else if (metadata.isDirectory()) {
-			assertNoEscapingSymlinks(root, entryPath);
+function copyArtifactEntry(
+	source: string,
+	destination: string,
+	root: string,
+	activeDirectories: Set<string>,
+): void {
+	const sourceInfo = lstatSync(source);
+	const resolvedSource = sourceInfo.isSymbolicLink() ? realpathSync(source) : source;
+	if (!isWithinRoot(root, realpathSync(resolvedSource))) {
+		throw new Error(`Artifact symlink escapes artifact root: ${source}`);
+	}
+
+	const info = lstatSync(resolvedSource);
+	if (info.isDirectory()) {
+		const canonicalDirectory = realpathSync(resolvedSource);
+		if (activeDirectories.has(canonicalDirectory)) {
+			throw new Error(`Artifact directory symlink cycle detected: ${source}`);
 		}
+		activeDirectories.add(canonicalDirectory);
+		mkdirSync(destination, { recursive: true, mode: info.mode });
+		try {
+			for (const entry of readdirSync(resolvedSource)) {
+				copyArtifactEntry(
+					path.join(resolvedSource, entry),
+					path.join(destination, entry),
+					root,
+					activeDirectories,
+				);
+			}
+		} finally {
+			activeDirectories.delete(canonicalDirectory);
+		}
+		chmodSync(destination, info.mode & 0o777);
+	} else if (info.isFile()) {
+		mkdirSync(path.dirname(destination), { recursive: true });
+		copyFileSync(resolvedSource, destination);
+		chmodSync(destination, info.mode & 0o777);
+	} else {
+		throw new Error(`Unsupported non-regular artifact entry: ${source}`);
 	}
 }
 
-/** ZIP a directory from its root after checking that its symlinks stay contained. */
+/** Stage an artifact with contained symlinks resolved, then ZIP the staged root. */
 export function zipArtifactDirectory(
 	directory: string,
 	outputZip: string,
@@ -31,13 +68,22 @@ export function zipArtifactDirectory(
 	},
 ): string {
 	rmSync(outputZip, { force: true });
-	const root = realpathSync(directory);
-	assertNoEscapingSymlinks(root, root);
+	let stagingDirectory: string | undefined;
 	try {
-		runZip(["-q", "-r", outputZip, "."], root);
+		const root = realpathSync(directory);
+		stagingDirectory = mkdtempSync(path.join(tmpdir(), "pawl-web-artifact-"));
+		const stagedRoot = path.join(stagingDirectory, "package");
+		copyArtifactEntry(root, stagedRoot, root, new Set());
+		try {
+			runZip(["-q", "-r", outputZip, "."], stagedRoot);
+		} catch (err) {
+			throw new Error(`Failed to zip artifact directory "${directory}"`, { cause: err });
+		}
+		return outputZip;
 	} catch (err) {
 		rmSync(outputZip, { force: true });
-		throw new Error(`Failed to zip artifact directory "${directory}"`, { cause: err });
+		throw err;
+	} finally {
+		if (stagingDirectory) rmSync(stagingDirectory, { recursive: true, force: true });
 	}
-	return outputZip;
 }

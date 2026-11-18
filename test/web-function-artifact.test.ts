@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
@@ -43,6 +43,12 @@ function findZip(directory: string): string {
 }
 
 test("packages a prebuilt artifact and exposes endpoint properties", () => {
+  mkdirSync(path.join(artifactDirectory, "nested"), { recursive: true });
+  writeFileSync(path.join(artifactDirectory, "package.json"), JSON.stringify({ type: "module" }));
+  writeFileSync(path.join(artifactDirectory, "nested", "package.json"), JSON.stringify({ name: "nested-runtime" }));
+  writeFileSync(path.join(artifactDirectory, "nested", "runtime.mjs"), "export const answer = 42;");
+  symlinkSync(path.join("nested", "runtime.mjs"), path.join(artifactDirectory, "linked-runtime.mjs"));
+  symlinkSync("nested", path.join(artifactDirectory, "linked-directory"));
   const { webFunction, template, assembly } = synth({
     ...common,
     artifact: { directory: artifactDirectory, entrypoint: "index.mjs" },
@@ -61,6 +67,16 @@ test("packages a prebuilt artifact and exposes endpoint properties", () => {
   try {
     execFileSync("unzip", ["-q", zip, "-d", extracted]);
     expect(readdirSync(extracted)).toContain("index.mjs");
+    expect(readdirSync(extracted)).toContain("package.json");
+    expect(readFileSync(path.join(extracted, "package.json"), "utf8")).toContain('"type":"module"');
+    expect(readFileSync(path.join(extracted, "nested", "package.json"), "utf8")).toContain("nested-runtime");
+    expect(readFileSync(path.join(extracted, "nested", "runtime.mjs"), "utf8")).toContain("answer = 42");
+    expect(readFileSync(path.join(extracted, "linked-runtime.mjs"), "utf8")).toContain("answer = 42");
+    expect(readFileSync(path.join(extracted, "linked-directory", "runtime.mjs"), "utf8")).toContain("answer = 42");
+    expect(lstatSync(path.join(extracted, "linked-runtime.mjs")).isSymbolicLink()).toBe(false);
+    expect(lstatSync(path.join(extracted, "linked-directory")).isSymbolicLink()).toBe(false);
+    expect(lstatSync(path.join(artifactDirectory, "linked-runtime.mjs")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(path.join(artifactDirectory, "linked-directory")).isSymbolicLink()).toBe(true);
     expect(readdirSync(extracted)).not.toContain("artifact");
   } finally {
     rmSync(extracted, { recursive: true, force: true });
@@ -85,6 +101,61 @@ test.each([
   ["conflicting entrypoint variable", { artifact: { directory: artifactDirectory, entrypoint: "index.mjs" }, environmentVariables: { AWS_LAMBDA_NODEJS_ENTRYPOINT: "other.mjs" } }],
 ])("rejects %s", (_name, props) => {
   expect(() => synth({ ...common, ...props })).toThrow();
+});
+
+test("stages internal file and directory symlinks as regular content", () => {
+  const outputZip = path.join(fixture, "staged.zip");
+  zipArtifactDirectory(artifactDirectory, outputZip, (args, cwd) => {
+    expect(realpathSync(cwd)).not.toBe(realpathSync(artifactDirectory));
+    expect(lstatSync(path.join(cwd, "linked-runtime.mjs")).isFile()).toBe(true);
+    expect(lstatSync(path.join(cwd, "linked-directory")).isDirectory()).toBe(true);
+    expect(readFileSync(path.join(cwd, "linked-runtime.mjs"), "utf8")).toContain("answer = 42");
+    execFileSync("zip", args, { cwd });
+  });
+  rmSync(outputZip, { force: true });
+});
+
+test.each([
+  ["broken", "missing-target", "broken-link"],
+  ["cyclic", "cycle-b", "cycle-a"],
+])("rejects %s internal symlinks", (_name, target, linkName) => {
+  const directory = mkdtempSync(path.join(fixture, "invalid-links-"));
+  const outputZip = path.join(fixture, "invalid-links.zip");
+  try {
+    writeFileSync(path.join(directory, "index.mjs"), "export {};");
+    if (linkName === "cycle-a") symlinkSync("cycle-a", path.join(directory, "cycle-b"));
+    symlinkSync(target, path.join(directory, linkName));
+    expect(() => zipArtifactDirectory(directory, outputZip)).toThrow();
+    expect(existsSync(outputZip)).toBe(false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(outputZip, { force: true });
+  }
+});
+
+test("rejects non-regular entries in the artifact tree", () => {
+  const directory = mkdtempSync(path.join(fixture, "non-regular-"));
+  const fifo = path.join(directory, "pipe");
+  try {
+    execFileSync("mkfifo", [fifo]);
+    expect(() => zipArtifactDirectory(directory, path.join(fixture, "non-regular.zip"))).toThrow(/non-regular/i);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(path.join(fixture, "non-regular.zip"), { force: true });
+  }
+});
+
+test("rejects a directory symlink cycle", () => {
+  const directory = mkdtempSync(path.join(fixture, "directory-cycle-"));
+  const outputZip = path.join(fixture, "directory-cycle.zip");
+  try {
+    writeFileSync(path.join(directory, "index.mjs"), "export {};");
+    symlinkSync(".", path.join(directory, "loop"));
+    expect(() => zipArtifactDirectory(directory, outputZip)).toThrow(/cycle/i);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(outputZip, { force: true });
+  }
 });
 
 test("removes a partially written ZIP after the ZIP command fails", () => {
@@ -114,6 +185,6 @@ test("rejects an escaping symlink anywhere in the artifact tree", () => {
 test("rejects a non-directory artifact root and a non-file startup path", () => {
   expect(() => synth({ ...common, artifact: { directory: path.join(fixture, "absent"), entrypoint: "index.mjs" } })).toThrow();
   const directoryEntrypoint = path.join(artifactDirectory, "nested");
-  mkdirSync(directoryEntrypoint);
+  mkdirSync(directoryEntrypoint, { recursive: true });
   expect(() => synth({ ...common, artifact: { directory: artifactDirectory, entrypoint: "nested" } })).toThrow();
 });
