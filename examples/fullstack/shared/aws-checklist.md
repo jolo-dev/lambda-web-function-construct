@@ -33,7 +33,7 @@ Run with bounded request counts and record real HTTP responses/timings. Allow bo
 - [ ] **Unsigned direct origin access:** direct unsigned requests to the Web Function endpoint are rejected (403) when IAM auth/OAC policy is in effect.
 - [ ] **Authorization isolation:** distinct `Authorization` values produce distinct dynamic responses (GET and POST) with no cross-user cache bleed.
 - [ ] **Cookies/query/errors:** dynamic responses with cookies/query parameters and error responses are not served from a shared cache entry across different requests/users.
-- [ ] **Host/proxy correctness:** `Host` and forwarding behavior are correct; host-spoof and redirect/mutation origin probes do not allow spoofed origin behavior. Verify `x-forwarded-host`/origin handling for framework server actions/redirects.
+- [ ] **Host/proxy correctness:** `Host` and forwarding behavior are correct; host-spoof and redirect/mutation origin probes do not allow spoofed origin behavior. The viewer-request function sets `x-public-host` (CloudFront forbids `x-forwarded-host`); verify that frameworks ignore client-supplied `x-forwarded-host` and that redirects/server actions do not rely on an unconsumed public-host header.
 - [ ] **Static old-URL retention after update:** deploy a second build/update, then request an old hashed asset URL using a unique query string or a path not previously fetched (to avoid edge-cache masking) and verify the prior key remains accessible through CloudFront/S3 (prune disabled). Distinguish S3 retention from edge cache hits.
 
 ### Headers/forwarding notes to verify live

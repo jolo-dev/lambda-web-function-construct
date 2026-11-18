@@ -563,25 +563,25 @@ test("attaches a viewer-request function that overwrites the forwarded host and 
   expect(staticBehavior.FunctionAssociations).toBeUndefined();
 });
 
-test("the deployed viewer-request function replaces client-supplied forwarded headers with the viewer context", () => {
+test("the deployed viewer-request function replaces client-supplied public-host and protocol headers", () => {
   const handler = deployedViewerRequestHandler(Template.fromStack(deliveryStack("ProxyHandlerStack")));
   const forwarded = handler({
     request: {
       uri: "/dashboard",
       headers: {
         host: { value: "d111abc.cloudfront.net" },
-        "x-forwarded-host": { value: "attacker.example" },
+        "x-public-host": { value: "attacker.example" },
         "x-forwarded-proto": { value: "http" },
       },
     },
   });
 
   expect(forwarded.uri).toBe("/dashboard");
-  expect(forwarded.headers["x-forwarded-host"]).toEqual({ value: "d111abc.cloudfront.net" });
+  expect(forwarded.headers["x-public-host"]).toEqual({ value: "d111abc.cloudfront.net" });
   expect(forwarded.headers["x-forwarded-proto"]).toEqual({ value: "https" });
 });
 
-test("the deployed viewer-request function removes client-supplied Forwarded and replaces every duplicate forwarded host value", () => {
+test("the deployed viewer-request function removes client-supplied Forwarded and replaces duplicate public-host values", () => {
   const handler = deployedViewerRequestHandler(Template.fromStack(deliveryStack("ProxyForwardedStack")));
   const rewritten = handler({
     request: {
@@ -589,7 +589,7 @@ test("the deployed viewer-request function removes client-supplied Forwarded and
       headers: {
         host: { value: "d111abc.cloudfront.net" },
         forwarded: { value: 'for=198.51.100.9;host=attacker.example;proto=http' },
-        "x-forwarded-host": {
+        "x-public-host": {
           value: "attacker.example",
           multiValue: [{ value: "attacker.example" }, { value: "evil.example" }],
         },
@@ -599,7 +599,7 @@ test("the deployed viewer-request function removes client-supplied Forwarded and
   });
 
   expect(rewritten.headers.forwarded).toBeUndefined();
-  expect(rewritten.headers["x-forwarded-host"]).toEqual({ value: "d111abc.cloudfront.net" });
+  expect(rewritten.headers["x-public-host"]).toEqual({ value: "d111abc.cloudfront.net" });
   expect(rewritten.headers["x-forwarded-proto"]).toEqual({ value: "https" });
 });
 
