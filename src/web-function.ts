@@ -263,6 +263,7 @@ export class WebFunction extends Construct {
 	/** Managed login domain created only when cognito is configured. */
 	public readonly userPoolDomain?: UserPoolDomain;
 	private readonly constructId: string;
+	private deliveryOwner?: Construct;
 
 	constructor(scope: Construct, id: string, props: WebFunctionProps) {
 		super(scope, id);
@@ -376,6 +377,19 @@ export class WebFunction extends Construct {
 			value: this.endpointDomainName,
 			exportName: `${id}-webFunctionDomainName`,
 		});
+	}
+
+	/**
+	 * Records the WebFunctionDelivery that owns this Web Function's CloudFront invoke policy.
+	 * @internal
+	 */
+	public _attachDelivery(owner: Construct): void {
+		if (this.deliveryOwner) {
+			throw new Error(
+				`WebFunction ${this.node.path} already has a delivery attached at ${this.deliveryOwner.node.path}`,
+			);
+		}
+		this.deliveryOwner = owner;
 	}
 
 	private uploadToS3(
