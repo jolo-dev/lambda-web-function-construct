@@ -99,9 +99,11 @@ CDK library, JSII, and JSII packaging versions are managed by `package.json` and
 
 `bun run build` invokes the local JSII compiler and emits the `.jsii` assembly used by Construct Hub to generate language-aware API documentation.
 
-## Fullstack framework artifacts
+## Fullstack framework examples (local proof)
 
-Build and smoke-test tooling for the planned Next.js, Nuxt, and TanStack Start examples lives in [`examples/fullstack/shared`](examples/fullstack/shared/README.md). `build-arm64.sh` builds a Linux Arm64 artifact in a Node.js 24 container and requires a running Docker daemon. `build-native.sh` is a host build for iteration only. Neither runs during CDK synthesis. The arm64 build has not been verified yet, and its image digest is still pending.
+Production-server examples for **Next.js 16.4.6** (standalone), **Nuxt 4.6.4** (Nitro `node-server`), and **TanStack Start 1.169.5** live under [`examples/fullstack/`](examples/fullstack/). Each example stages a deployable artifact, composes `WebFunction` with `WebFunctionDelivery` (immutable static assets from private S3, dynamic traffic to an IAM-protected Web Function), and has local extracted-artifact smoke tests proving SSR, a native server mutation with validation, navigation, and static/public asset serving. See the per-example READMEs and [`examples/fullstack/shared/README.md`](examples/fullstack/shared/README.md).
+
+**Status:** local/native proof only. Linux Arm64 Docker artifact builds, browser hydration/click verification, and live AWS deployment are **not run/not approved**. Live deployment is gated by [`examples/fullstack/shared/aws-checklist.md`](examples/fullstack/shared/aws-checklist.md) and requires separate explicit approval. Build tooling (`build-arm64.sh`, `build-native.sh`) never runs during CDK synthesis. llarg
 
 ## Web Functions Benchmark
 
