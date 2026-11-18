@@ -41,7 +41,7 @@ stack environment wiring described below.
 | `src/utils/session.ts` | Adapted `getAppSession()`: `getIronSession` with `getCookie`/`setCookie` from `@tanstack/react-start/server`, cookie name `app-session`, 7-day TTL, `httpOnly`, `sameSite: "lax"`, `secure` when `NODE_ENV=production`. Requires `SESSION_PASSWORD` of at least 32 characters. No Prisma import. |
 | `src/utils/demo-user.ts` | Single public demo user (`demo@example.com` / `demo-password`). Exposes a SHA-256 digest comparison helper. Clearly documented as demo-only. |
 | `src/routes/__root.tsx` | Keeps the current document shell and adds a `fetchUser` server function that reads the session and puts `{ user }` in route context. |
-| `src/routes/login.tsx` | Public login page and `loginFn` server function. Valid credentials set `session.userEmail` and call `session.save()`; invalid credentials return the starter-style `{ error: true, message }`. |
+| `src/routes/login.tsx` | Public login page and `loginFn` server function. Valid credentials set `session.userEmail` and call `session.save()`; invalid credentials return the starter-style `{ error: true, message }`. Thin native `/api/login`, `/api/logout`, and `/api/session` server routes delegate to the same session helpers so the flow can be probed without a browser; the login panel submits JSON to `/api/login`. |
 | `src/routes/logout.tsx` | `logoutFn` destroys the session and redirects to `/`, matching the starter. |
 | `src/routes/_authed.tsx` | Pathless protected layout. `beforeLoad` throws `Not authenticated` when `context.user` is absent; `errorComponent` renders the login UI for that error. |
 | `src/routes/_authed/profile.tsx` | Protected page that displays the authenticated demo email. |
