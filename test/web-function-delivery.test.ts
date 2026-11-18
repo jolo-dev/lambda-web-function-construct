@@ -571,14 +571,14 @@ test("the deployed viewer-request function replaces client-supplied public-host 
       headers: {
         host: { value: "d111abc.cloudfront.net" },
         "x-public-host": { value: "attacker.example" },
-        "x-forwarded-proto": { value: "http" },
+        "x-public-proto": { value: "http" },
       },
     },
   });
 
   expect(forwarded.uri).toBe("/dashboard");
   expect(forwarded.headers["x-public-host"]).toEqual({ value: "d111abc.cloudfront.net" });
-  expect(forwarded.headers["x-forwarded-proto"]).toEqual({ value: "https" });
+  expect(forwarded.headers["x-public-proto"]).toEqual({ value: "https" });
 });
 
 test("the deployed viewer-request function removes client-supplied Forwarded and replaces duplicate public-host values", () => {
@@ -593,14 +593,14 @@ test("the deployed viewer-request function removes client-supplied Forwarded and
           value: "attacker.example",
           multiValue: [{ value: "attacker.example" }, { value: "evil.example" }],
         },
-        "x-forwarded-proto": { value: "http" },
+        "x-public-proto": { value: "http" },
       },
     },
   });
 
   expect(rewritten.headers.forwarded).toBeUndefined();
   expect(rewritten.headers["x-public-host"]).toEqual({ value: "d111abc.cloudfront.net" });
-  expect(rewritten.headers["x-forwarded-proto"]).toEqual({ value: "https" });
+  expect(rewritten.headers["x-public-proto"]).toEqual({ value: "https" });
 });
 
 test("the deployed viewer-request function refuses a request without a viewer Host", () => {
