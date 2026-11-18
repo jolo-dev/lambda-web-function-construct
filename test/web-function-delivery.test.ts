@@ -513,16 +513,16 @@ test("routes dynamic traffic to the Web Function endpoint with the viewer Host e
   });
 });
 
-test("keys the dynamic cache policy only on Authorization with every TTL at zero", () => {
+test("keys the dynamic cache policy only on Authorization with a one-second per-identity TTL", () => {
   const template = Template.fromStack(deliveryStack("DynamicCachePolicyStack"));
   const dynamicPolicyId = logicalIdWhere(template, "AWS::CloudFront::CachePolicy", (resource) =>
-    resource.Properties.CachePolicyConfig.DefaultTTL === 0);
+    resource.Properties.CachePolicyConfig.DefaultTTL === 1);
 
   template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
     CachePolicyConfig: {
-      DefaultTTL: 0,
-      MinTTL: 0,
-      MaxTTL: 0,
+      DefaultTTL: 1,
+      MinTTL: 1,
+      MaxTTL: 1,
       ParametersInCacheKeyAndForwardedToOrigin: {
         HeadersConfig: { HeaderBehavior: "whitelist", Headers: ["Authorization"] },
         CookiesConfig: { CookieBehavior: "none" },
@@ -614,7 +614,7 @@ test("the deployed viewer-request function refuses a request without a viewer Ho
 test("forwards cookies, query strings, and dynamic headers through the managed AllViewerExceptHostHeader policy", () => {
   const template = Template.fromStack(deliveryStack("DynamicForwardingPolicyStack"));
   // The managed policy forwards all viewer headers except Host, plus all cookies and query strings.
-  // Cookies and query strings are not part of the cache key because the dynamic TTL is zero.
+  // Cookies and query strings are not cache keys; Authorization isolates identities for the 1-second TTL.
   template.hasResourceProperties("AWS::CloudFront::Distribution", {
     DistributionConfig: {
       DefaultCacheBehavior: Match.objectLike({ OriginRequestPolicyId: allViewerExceptHostHeaderPolicyId }),
@@ -681,7 +681,7 @@ test("enables gzip and brotli Accept-Encoding support on the static cache policy
   const staticPolicyId = logicalIdWhere(template, "AWS::CloudFront::CachePolicy", (resource) =>
     resource.Properties.CachePolicyConfig.DefaultTTL === 31536000);
   const dynamicPolicyId = logicalIdWhere(template, "AWS::CloudFront::CachePolicy", (resource) =>
-    resource.Properties.CachePolicyConfig.DefaultTTL === 0);
+    resource.Properties.CachePolicyConfig.DefaultTTL === 1);
 
   template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
     CachePolicyConfig: {

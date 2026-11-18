@@ -207,12 +207,16 @@ export class WebFunctionDelivery extends Construct {
 			enableAcceptEncodingGzip: true,
 			enableAcceptEncodingBrotli: true,
 		});
-		// Zero TTLs keep dynamic responses out of the shared cache even when the origin sends cache headers.
-		// The Web Function OAC guide requires Authorization in the cache policy of every behavior that uses the origin.
+		// CloudFront rejects an Authorization cache-key header list when caching is disabled (all TTLs 0):
+		// "The parameter HeaderBehavior is invalid for policy with caching disabled" (live, 2026-11-18).
+		// A one-second TTL is the smallest practical value that keeps Authorization in the cache key, so
+		// responses are isolated per viewer identity; a same-identity response may be reused for at most 1s.
+		// Cookies and query strings are deliberately not cache keys; the origin request policy still forwards them.
+		const dynamicTtl = Duration.seconds(1);
 		const dynamicCachePolicy = new CachePolicy(this, "DynamicCachePolicy", {
-			defaultTtl: Duration.seconds(0),
-			minTtl: Duration.seconds(0),
-			maxTtl: Duration.seconds(0),
+			defaultTtl: dynamicTtl,
+			minTtl: dynamicTtl,
+			maxTtl: dynamicTtl,
 			headerBehavior: CacheHeaderBehavior.allowList("Authorization"),
 		});
 		const proxyHeadersFunction = new CloudFrontFunction(this, "ProxyHeadersFunction", {

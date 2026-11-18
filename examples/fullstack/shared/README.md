@@ -63,7 +63,7 @@ bash examples/fullstack/shared/build-arm64-artifacts.sh
 
 ## Known open gates before claiming deployability
 
-- Live CloudFront acceptance of the all-zero-TTL dynamic cache policy keyed by `Authorization`.
+- Live CloudFront acceptance of the revised **1-second, Authorization-keyed** dynamic cache policy. The originally planned all-zero-TTL policy was rejected live; cross-identity reuse remains forbidden, but same-identity reuse for ≤1 second is now explicitly approved.
 - Real Lambda acceptance of the resource policy shape (function ARN as `ResourceArn`, endpoint ARN in statement `Resource`, distribution-scoped `aws:SourceArn`).
 - Correct static `Content-Type` from implicit `aws s3 sync` MIME inference.
 - End-to-end forwarding/origin behavior (`Host`, `X-Forwarded-*`, server-action/redirect origin checks) behind CloudFront.

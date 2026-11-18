@@ -55,4 +55,4 @@ The test synthesizes the stack, extracts the Lambda ZIP, resolves literal runtim
 - **No browser hydration/click proof in this task.** HTTP and RSC-like navigation checks only; full browser interaction not verified.
 - **Streaming:** the server uses `defaultStreamHandler`; incremental streaming delivery to CloudFront/Lambda was not separately measured.
 - Does not demonstrate ISR/cache consistency, deployment-skew-safe old server actions, image optimization, edge runtime, WebSockets, or multi-region behavior.
-- Live CloudFront acceptance of the zero-TTL Authorization-keyed dynamic policy and the Lambda resource-policy shape remain deployment-gated. See `docs/superpowers/plans/2026-11-18-fullstack-preflight.md` and the plan’s live-AWS gate.
+- Live CloudFront acceptance of the revised 1-second Authorization-keyed dynamic policy and the Lambda resource-policy shape remain deployment-gated (the original zero-TTL policy was rejected live). See `docs/superpowers/plans/2026-11-18-fullstack-preflight.md` and the plan’s live-AWS gate.
