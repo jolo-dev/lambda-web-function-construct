@@ -89,7 +89,7 @@ password input, and pass `SESSION_PASSWORD`/`NODE_ENV=production` through `start
 - valid login sets `app-session` with `HttpOnly`, `Secure`, and `SameSite=Lax`, and authenticated `/profile` shows
   the demo email;
 - unauthenticated `/profile` renders the login UI;
-- logout clears access and a subsequent `/profile` request renders login again.
+- logout clears the browser cookie and a subsequent `/profile` request without that cookie renders login. Because `iron-session` is stateless, a previously copied cookie remains valid until its TTL; the test documents this instead of pretending server-side revocation exists.
 
 Rebuild the Linux Arm64 artifact after adding `iron-session`, re-run the focused contract test and full suite, and
 re-run JSII/type checks before any live action.
@@ -125,6 +125,7 @@ design/plan gates are complete.
 - Encrypted session cookies are stateless, so no database is needed, but rotating `SESSION_PASSWORD` invalidates all
   sessions. The demo does not require session continuity across deployments.
 - The SHA-256 demo password check is intentionally insecure and must not be presented as production auth.
+- `iron-session` is stateless: `session.destroy()` tells the browser to clear its cookie but cannot revoke an older copied cookie before the 7-day TTL. The demo must document this; no server-side session store is in scope.
 - Browser hydration/click behavior, streaming timing, and two-build old-asset retention remain unverified unless a
   separate check is added.
 - CloudFront Functions still use `x-public-host`/`x-public-proto`; no example consumes them, so public-origin
