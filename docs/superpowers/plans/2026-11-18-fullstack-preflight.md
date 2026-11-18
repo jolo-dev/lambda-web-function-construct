@@ -54,3 +54,18 @@ These are required evidence cases for the dynamic behavior, not tests run in thi
 Official docs consulted: Lambda Web Function runtimes, HTTP methods, and endpoint access control; CloudFront restricting access to Lambda Web Function origins; Next.js self-hosting; TanStack Start hosting; Nitro Node deployment. Local declarations and exact-version package registry metadata were inspected as listed above.
 
 Open uncertainties: CloudFront's service-side acceptance of the all-zero TTL + Authorization candidate; current AWS-managed Node 24 patch relative to Nuxt's minimum; exact TanStack Start 1.169.5 server/client output; actual framework build outputs, native module ABI/architecture, server listener behavior, dynamic cache behavior, and end-to-end browser/runtime compatibility. These need explicit artifact/build verification in later plan tasks; live AWS testing remains separately approval-gated.
+
+## Live gate result (2026-11-18, approved single-stack probe)
+
+`FullstackNextjs` was deployed once under profile `jolo` in `eu-central-1` (account `246350246460`) with the locally verified Linux Arm64 artifact. **Deployment failed during CloudFront cache-policy creation, before any distribution, Web Function, bucket or endpoint was created:**
+
+```
+AWS::CloudFront::CachePolicy Delivery/DynamicCachePolicy
+Invalid request provided: AWS::CloudFront::CachePolicy: The parameter HeaderBehavior is invalid for policy with caching disabled. (Service: CloudFront, Status Code: 400)
+```
+
+The synthesized policy had `MinTTL = DefaultTTL = MaxTTL = 0` and `HeadersConfig.HeaderBehavior = whitelist` with `Authorization`. The service therefore confirms acceptance criterion **(a) fails**: CloudFront does not allow an Authorization cache-key header list when caching is disabled by all-zero TTLs. The approved design explicitly requires both Authorization in the cache policy (per the Web Function OAC guide, which says CloudFront otherwise removes it on GET/HEAD) and no shared dynamic caching. This is a design conflict, not an implementation bug.
+
+Per the approved design, **stop for design review; do not silently weaken either requirement.** The failed stack was rolled back and destroyed; verification showed no stack, no `fullstack-nextjs*` bucket, and no CloudFront distribution left behind.
+
+Documented AWS behavior supporting a revision decision: managed `CachingDisabled` has all TTLs 0 and **no headers** in the cache key, so it cannot satisfy the Web Function Authorization-forwarding requirement. Managed Amplify policies that include `Authorization` in the cache key use a non-zero minimum TTL (2 seconds in the reviewed docs), which is how a policy with an Authorization header list is accepted. A candidate revision is a custom policy with `MinTTL = DefaultTTL = MaxTTL = 1` second plus `Authorization` in the cache key: requests would still be isolated per Authorization value, but CloudFront may reuse a response for up to 1 second for the same identity. That changes the approved “no shared caching at all” semantics and requires operator approval before implementation and another live probe.

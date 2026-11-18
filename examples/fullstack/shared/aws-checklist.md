@@ -1,6 +1,6 @@
 # Fullstack AWS deployment checklist (gated)
 
-**Status: NOT APPROVED / NOT RUN.** This checklist is for a future, explicitly approved live deployment only. Design approval and plan approval do **not** authorize any AWS action. Do not run these commands without fresh operator approval that states account, region, stack names, exact deploy commands, expected resources, cost drivers/limits, bounded traffic caps, and cleanup expectations.
+**Status: GATED — first single-stack probe failed at the CloudFront cache-policy preflight; no full live run.** A bounded `FullstackNextjs` deploy was authorized and executed under profile `jolo` in `eu-central-1` (account `246350246460`). CloudFront rejected the all-zero-TTL cache policy with `Authorization` in the cache key: `The parameter HeaderBehavior is invalid for policy with caching disabled`. The stack rolled back and was destroyed. Three CDK bootstrap asset objects uploaded before the failure (12.6 MB revision ZIP, 184 KB static ZIP, 32 KB template JSON, all `2026-11-18T19:15:59Z`) were explicitly deleted and verified gone; no stack, bucket, distribution, or uploaded asset remains. Per the approved design, stop for a design revision rather than weakening either Authorization forwarding or no-shared-caching. Do not re-run any deploy until that decision is made and explicitly approved.
 
 ## Scope
 
@@ -15,7 +15,7 @@ Validate the three example stacks (Next.js, Nuxt, TanStack Start) composed as `W
 
 - [ ] **Explicit approval obtained** with: AWS account (read-only `sts get-caller-identity` under profile `jolo` resolved `246350246460`, `arn:aws:iam::246350246460:user/jolo`), region `eu-central-1` (operator-supplied), stack names (one per framework), exact `cdk deploy`/destroy commands, expected resources, cost drivers, spending/traffic caps, request schedule, required checks, and cleanup/verification commands. **Profile and region alone are not the full approval.**
 - [x] **Linux Arm64 artifacts built and verified locally** in a pinned `node:24.22.1-bookworm-slim` (verified multi-arch digest) `linux/arm64` container via `examples/fullstack/shared/build-arm64-artifacts.sh`: Node `v24.22.1`, ARM aarch64 native modules, artifact/ZIP sizes and synthesis checked, and container runtime smoke (identity, SSR, mutation) passed. This is local container evidence only; it does not replace live AWS verification.
-- [ ] **CloudFront policy preflight:** probe that CloudFront accepts the all-zero-TTL cache policy with `Authorization` in the cache key for the dynamic behavior. If rejected, **stop and seek design revision** before rolling out stacks.
+- [x] **CloudFront policy preflight — FAILED (stop condition).** The all-zero-TTL + Authorization cache policy is rejected by CloudFront (`HeaderBehavior is invalid for policy with caching disabled`). Per design, no Nuxt/TanStack rollout and no policy weakening without a new operator decision. See `docs/superpowers/plans/2026-11-18-fullstack-preflight.md`, "Live gate result".
 
 ## Bounded live probes (after approval and deploy)
 
