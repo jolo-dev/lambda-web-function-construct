@@ -36,7 +36,7 @@ bun run build:artifact                        # native host build, development e
 bun test test/fullstack-nuxt.test.ts          # from the repository root; needs the staged artifact
 ```
 
-`build:artifact` runs `build-native.sh`, which writes to `examples/fullstack/artifacts/nuxt/native-<platform>-<arch>` (git-ignored). The Linux Arm64 path is `bash examples/fullstack/shared/build-arm64.sh examples/fullstack/nuxt -- node build-artifact.mjs`. **NOT RUN** in this session (Docker unavailable / image digest unpinned as applicable).
+`build:artifact` runs `build-native.sh`, which writes to `examples/fullstack/artifacts/nuxt/native-<platform>-<arch>` (git-ignored). The Linux Arm64 path is `bash examples/fullstack/shared/build-arm64-artifacts.sh` and was executed locally in a pinned `linux/arm64` Node 24.22.1 container with Bun 1.4.4 and frozen dependencies.
 
 ## Discovered Nitro node-server output (from pinned build)
 
@@ -60,7 +60,7 @@ bun test test/fullstack-nuxt.test.ts          # from the repository root; needs 
 | Contract RED (`test/fullstack-nuxt.test.ts`, before implementation/build) | See plan Task 8 execution record. |
 | Contract GREEN (`bun test test/fullstack-nuxt.test.ts`) | See plan Task 8 execution record. |
 | Extracted ZIP starts on a non-default port, SSR/mutation/assets/navigation probes | See plan Task 8 execution record. |
-| Linux Arm64 artifact build | **NOT RUN** (Docker unavailable). |
+| Linux Arm64 artifact build | **PASSED locally** in a pinned `linux/arm64` Node 24 container; started artifact served SSR and `/api/square`. |
 | Browser hydration/click navigation | **NOT RUN** (no browser runner). |
 | CloudFront/AWS deployment | **NOT RUN** (not approved). |
 | Streaming incremental delivery | Recorded separately only if actually verified. |

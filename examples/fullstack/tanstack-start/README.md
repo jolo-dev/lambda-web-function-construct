@@ -51,7 +51,7 @@ The test synthesizes the stack, extracts the Lambda ZIP, resolves literal runtim
 
 ## Limitations and unverified behavior
 
-- **No Linux arm64 deployment artifact proof in this task.** Docker/arm64 build and AWS deployment are not run.
+- **Linux Arm64 artifact proof is local only.** The artifact was built in a pinned `linux/arm64` Node 24.22.1 container (Bun 1.4.4, frozen lockfile), with ARM aarch64 native modules, and started there serving SSR and `/api/square`; **AWS deployment is not run**.
 - **No browser hydration/click proof in this task.** HTTP and RSC-like navigation checks only; full browser interaction not verified.
 - **Streaming:** the server uses `defaultStreamHandler`; incremental streaming delivery to CloudFront/Lambda was not separately measured.
 - Does not demonstrate ISR/cache consistency, deployment-skew-safe old server actions, image optimization, edge runtime, WebSockets, or multi-region behavior.

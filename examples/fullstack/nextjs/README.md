@@ -36,10 +36,10 @@ bun test test/fullstack-nextjs.test.ts        # from the repository root; needs 
 `build:artifact` runs `build-native.sh`, which writes to `examples/fullstack/artifacts/nextjs/native-<platform>-<arch>`
 (git-ignored). The test suite reads that native directory and fails with the build command if it is missing.
 
-The Linux Arm64 path is `bash examples/fullstack/shared/build-arm64.sh examples/fullstack/nextjs -- node build-artifact.mjs`.
-**It has not run.** Docker is unavailable in the development environment, and `build-arm64.sh` refuses to run until its
-image digest is pinned. The container image also has no `bun`, so the in-container dependency install step is not yet
-defined; `bun install --frozen-lockfile` must run before `build-artifact.mjs` there.
+The Linux Arm64 path is `bash examples/fullstack/shared/build-arm64-artifacts.sh` (or the single-framework
+`build-arm64.sh examples/fullstack/nextjs -- <build command>`). It now runs in a pinned `linux/arm64` Node 24.22.1
+container: Bun 1.4.4 and frozen dependencies are installed inside the container, then `node build-artifact.mjs` stages
+the artifact. This was executed locally; the traced `sharp` binary is ELF ARM aarch64.
 
 ## Launcher contract
 
@@ -83,7 +83,7 @@ stack is not deployed, and synthesis never runs the framework build.
 | Server action validates input and returns a computed result | Passed (valid and invalid values, through the no-JavaScript form path). |
 | Client navigation (RSC payload for `/about`) | Passed via a plain fetch. The browser does not run. |
 | Hashed chunk under `/_next/static/` with immutable caching | Passed. |
-| Linux Arm64 artifact build | **NOT RUN** (no Docker; digest unpinned). |
+| Linux Arm64 artifact build | **PASSED locally** in a pinned `linux/arm64` Node 24 container; native `sharp` binary is ARM aarch64. |
 | Browser hydration, click handling, client-side navigation | **NOT RUN.** No browser runner is in the project. HTML probes cannot prove hydration. |
 | Server action origin checks behind CloudFront (`X-Forwarded-Host`) | **Not verified.** The local smoke test has no proxy. |
 | CloudFront, S3, Web Function deployment and IAM invocation | **NOT RUN.** Live AWS is not approved. |

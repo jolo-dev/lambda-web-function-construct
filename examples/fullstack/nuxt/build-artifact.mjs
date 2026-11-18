@@ -33,11 +33,13 @@ const publicEntries = readdirSync(publicDir, { withFileTypes: true })
   .map((e) => `/${e.name}/`);
 console.log(`discovered public subdirectories: ${publicEntries.join(", ") || "(none)"}`);
 
-cpSync(outputDir, path.join(out, ".output"), { recursive: true });
+// The no-op filter keeps Node on cpSync's JS path: copy_file_range is rejected with EACCES
+// on Docker Desktop bind mounts used by build-arm64.sh.
+cpSync(outputDir, path.join(out, ".output"), { recursive: true, filter: () => true });
 rebaseOutputSymlinks(path.join(out, ".output"), outputDir);
 repairNitroVueTrace(path.join(out, ".output", "server", "node_modules"));
 breakNitroCycles(path.join(out, ".output", "server", "node_modules", ".nitro"));
-cpSync(path.join(root, "index.js"), path.join(out, "index.js"));
+cpSync(path.join(root, "index.js"), path.join(out, "index.js"), { filter: () => true });
 console.log(`staged Nuxt node-server artifact in ${out}`);
 console.log(`server entry: .output/server/index.mjs`);
 

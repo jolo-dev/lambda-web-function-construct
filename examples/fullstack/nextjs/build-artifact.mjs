@@ -22,8 +22,11 @@ if (!existsSync(path.join(standalone, "server.js"))) {
 
 // The standalone tree carries the server, its manifests and traced dependencies. Next does not copy
 // .next/static or public/ into it, so both are staged beside it at the paths the server reads.
-cpSync(standalone, out, { recursive: true });
-cpSync(path.join(root, ".next", "static"), path.join(out, ".next", "static"), { recursive: true });
-cpSync(path.join(root, "public"), path.join(out, "public"), { recursive: true });
-cpSync(path.join(root, "index.js"), path.join(out, "index.js"));
+// The no-op filter keeps Node on cpSync's JS path: copy_file_range is rejected with EACCES
+// on Docker Desktop bind mounts used by build-arm64.sh.
+const portableCopy = { recursive: true, filter: () => true };
+cpSync(standalone, out, portableCopy);
+cpSync(path.join(root, ".next", "static"), path.join(out, ".next", "static"), portableCopy);
+cpSync(path.join(root, "public"), path.join(out, "public"), portableCopy);
+cpSync(path.join(root, "index.js"), path.join(out, "index.js"), portableCopy);
 console.log(`staged Next.js standalone artifact in ${out}`);

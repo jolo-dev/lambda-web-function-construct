@@ -32,7 +32,9 @@ cpSync(distDir, path.join(out, "dist"), {
   dereference: true,
   filter: (source) => !source.includes(`${path.sep}.vite${path.sep}`),
 });
-cpSync(path.join(root, "index.js"), path.join(out, "index.js"), { dereference: true });
+// The no-op filter keeps Node on cpSync's JS path: copy_file_range is rejected with EACCES
+// on Docker Desktop bind mounts used by build-arm64.sh.
+cpSync(path.join(root, "index.js"), path.join(out, "index.js"), { dereference: true, filter: () => true });
 
 // The server bundle keeps framework/runtime packages external; stage example node_modules
 // so the extracted Web Function artifact can resolve them without rebundling.

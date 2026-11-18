@@ -103,7 +103,7 @@ CDK library, JSII, and JSII packaging versions are managed by `package.json` and
 
 Production-server examples for **Next.js 16.4.6** (standalone), **Nuxt 4.6.4** (Nitro `node-server`), and **TanStack Start 1.169.5** live under [`examples/fullstack/`](examples/fullstack/). Each example stages a deployable artifact, composes `WebFunction` with `WebFunctionDelivery` (immutable static assets from private S3, dynamic traffic to an IAM-protected Web Function), and has local extracted-artifact smoke tests proving SSR, a native server mutation with validation, navigation, and static/public asset serving. See the per-example READMEs and [`examples/fullstack/shared/README.md`](examples/fullstack/shared/README.md).
 
-**Status:** local/native proof only. Linux Arm64 Docker artifact builds, browser hydration/click verification, and live AWS deployment are **not run/not approved**. Live deployment is gated by [`examples/fullstack/shared/aws-checklist.md`](examples/fullstack/shared/aws-checklist.md) and requires separate explicit approval. Build tooling (`build-arm64.sh`, `build-native.sh`) never runs during CDK synthesis. llarg
+**Status:** local proof and local Linux Arm64 container proof. Browser hydration/click verification and live AWS deployment are **not run/not approved**. All three artifacts were built and smoke-tested in a pinned `linux/arm64` Node 24.22.1 container (`bash examples/fullstack/shared/build-arm64-artifacts.sh`) with ARM-native modules verified. Live deployment remains gated by [`examples/fullstack/shared/aws-checklist.md`](examples/fullstack/shared/aws-checklist.md) and requires separate explicit approval. Build tooling (`build-arm64.sh`, `build-native.sh`) never runs during CDK synthesis.
 
 ## Web Functions Benchmark
 

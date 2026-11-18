@@ -9,10 +9,11 @@
 # This script never falls back to a native build; use build-native.sh for host iteration.
 set -euo pipefail
 
-# TODO: pin the digest of NODE_IMAGE_TAG after verifying it against the registry. It was not
-# verifiable offline, so no digest is invented here. The script refuses to run until this is set.
+# Multi-arch index digest verified with `docker buildx imagetools inspect node:24.22.1-bookworm-slim`
+# on 2026-11-18; it includes a linux/arm64/v8 manifest. Pinning the index (not a single-arch manifest)
+# lets --platform select arm64 deterministically.
 readonly NODE_IMAGE_TAG="node:24.22.1-bookworm-slim"
-readonly NODE_IMAGE="${NODE_IMAGE_TAG}@sha256:TODO-pin-verified-digest"
+readonly NODE_IMAGE="${NODE_IMAGE_TAG}@sha256:be8204d4bd327363357f532187b752ff62759c31bedf98e9e18fc08c9cbd605c"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
@@ -49,6 +50,8 @@ platform="$(docker run --rm --platform linux/arm64 "$NODE_IMAGE" node -p 'proces
 artifact_root="$repo_root/examples/fullstack/artifacts/$(basename "$workspace")/linux-arm64"
 rm -rf "$artifact_root"
 mkdir -p "$artifact_root"
+# The mount renders as root-owned in the container; cpSync/mkdirSync may need to set modes on /out itself.
+chmod 777 "$artifact_root"
 
 docker run --rm \
 	--platform linux/arm64 \
