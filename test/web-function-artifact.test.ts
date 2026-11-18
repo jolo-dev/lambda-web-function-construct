@@ -28,6 +28,31 @@ const common = {
   endpointName: "prod",
 };
 
+function requestWithDeadline(port: number, requestPath: string, deadlineMs: number, inactivityTimeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port, path: requestPath, method: "GET", timeout: inactivityTimeoutMs }, (res) => {
+      let data = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => {
+        clearTimeout(deadline);
+        resolve(data);
+      });
+      res.on("error", (error) => {
+        clearTimeout(deadline);
+        reject(error);
+      });
+    });
+    const deadline = setTimeout(() => req.destroy(new Error("request deadline exceeded")), deadlineMs);
+    req.on("timeout", () => req.destroy(new Error("request inactivity timeout")));
+    req.on("error", (error) => {
+      clearTimeout(deadline);
+      reject(error);
+    });
+    req.end();
+  });
+}
+
 function synth(props: Record<string, unknown>) {
   const app = new App();
   const stack = new Stack(app, `Artifact${Math.random().toString(36).slice(2)}`);
@@ -116,7 +141,14 @@ test("starts the extracted artifact using its configured entrypoint and endpoint
       'import { createServer } from "node:http";',
       'import { message } from "./nested/message.mjs";',
       'const [host, port] = (process.env.AWS_LAMBDA_HTTP_ENDPOINT || "127.0.0.1:3000").split(":");',
-      'const server = createServer((_request, response) => response.end(message));',
+      'const server = createServer((request, response) => {',
+      '  if (request.url === "/stream") {',
+      '    const interval = setInterval(() => response.write("chunk\\n"), 10);',
+      '    response.on("close", () => { clearInterval(interval); process.stdout.write("STREAM_CLOSED\\n"); });',
+      '    return;',
+      '  }',
+      '  response.end(message);',
+      '});',
       'server.listen(Number(port), host, () => {',
       '  const address = server.address();',
       '  if (!address || typeof address === "string") throw new Error("No TCP address allocated");',
@@ -164,6 +196,13 @@ test("starts the extracted artifact using its configured entrypoint and endpoint
       req.end();
     });
     expect(body).toBe("from nested artifact");
+
+    await expect(requestWithDeadline(port!, "/stream", 100, 1000)).rejects.toThrow("request deadline exceeded");
+    const closeDeadline = Date.now() + 1000;
+    while (Date.now() < closeDeadline && !stdout.includes("STREAM_CLOSED")) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(stdout).toContain("STREAM_CLOSED");
   } finally {
     try {
       if (child && child.exitCode === null && child.signalCode === null && childError === undefined) {
