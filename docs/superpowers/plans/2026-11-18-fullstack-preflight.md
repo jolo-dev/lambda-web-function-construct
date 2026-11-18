@@ -103,4 +103,4 @@ The operator explicitly approved a Nuxt live rollout and asked **not to clean it
 
 Bounded probes passed: unsigned direct 403; SSR 200 with request-time timestamp; `/about` 200; `/__probe/identity` 404 without marker; `robots.txt` 200 `text/plain; charset=utf-8`; `/_nuxt/Dk7r3ghq.js` 200 `text/javascript` with immutable caching; 404 error path; native `/api/square` valid `{"result":"7 squared is 49"}` and invalid 400 validation error. Distinct Authorization/cookie/query combinations each Miss; exact repeat Miss → Hit within 1 second.
 
-The stack was **intentionally retained** with all resources and bootstrap asset objects. Identifiers, inspection commands, ongoing-cost warning, and the future cleanup command are in `examples/fullstack/shared/live-resources.md`.
+The stack was initially retained at the operator's request for inspection, then **deleted after the operator finished testing**. Stack, distribution, asset bucket, and the three bootstrap asset objects were verified gone; identifiers and cleanup verification are in `examples/fullstack/shared/live-resources.md`.

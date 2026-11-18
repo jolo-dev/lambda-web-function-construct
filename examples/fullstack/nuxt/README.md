@@ -2,7 +2,7 @@
 
 A Nuxt 4 app running Nitro's production Node server preset on a Lambda Web Function. It demonstrates request-time SSR, client navigation/hydration code paths, a native Nitro server mutation with validation, and hashed client assets served from private S3 behind CloudFront. It uses no database, login, cache, or persistence.
 
-Status: **local proof plus a bounded live deployment retained for inspection.** Linux Arm64 container proof passed; the live `FullstackNuxt` stack is still running at `https://d3d631mv731ey1.cloudfront.net` by operator request. Browser hydration verification was **NOT RUN**.
+Status: **local proof plus a bounded live deployment that was inspected and then deleted.** Linux Arm64 container proof and a live `FullstackNuxt` probe passed; the stack was cleaned up at the operator's request after testing. Browser hydration verification was **NOT RUN**.
 
 ## Pinned versions
 
@@ -62,7 +62,7 @@ bun test test/fullstack-nuxt.test.ts          # from the repository root; needs 
 | Extracted ZIP starts on a non-default port, SSR/mutation/assets/navigation probes | See plan Task 8 execution record. |
 | Linux Arm64 artifact build | **PASSED locally** in a pinned `linux/arm64` Node 24 container; started artifact served SSR and `/api/square`. |
 | Browser hydration/click navigation | **NOT RUN** (no browser runner). |
-| CloudFront/AWS deployment | **COMPLETED and intentionally retained.** See `../shared/live-resources.md` for URLs, identifiers, and cleanup command. |
+| CloudFront/AWS deployment | **COMPLETED and cleaned up.** See `../shared/live-resources.md` for retired identifiers and cleanup verification. |
 | Streaming incremental delivery | Recorded separately only if actually verified. |
 
 ## Limits
