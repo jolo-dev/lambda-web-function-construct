@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createServer, request } from "node:http";
+import { request } from "node:http";
 import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
@@ -87,7 +87,6 @@ test("packages a prebuilt artifact and exposes endpoint properties", () => {
 test("starts the extracted artifact using its configured entrypoint and endpoint", async () => {
   const source = mkdtempSync(path.join(tmpdir(), "web-function-runtime-source-"));
   const extracted = mkdtempSync(path.join(tmpdir(), "web-function-runtime-extracted-"));
-  const probe = createServer();
   let child: ReturnType<typeof spawn> | undefined;
   try {
     mkdirSync(path.join(source, "nested"));
@@ -97,7 +96,12 @@ test("starts the extracted artifact using its configured entrypoint and endpoint
       'import { createServer } from "node:http";',
       'import { message } from "./nested/message.mjs";',
       'const [host, port] = (process.env.AWS_LAMBDA_HTTP_ENDPOINT || "127.0.0.1:3000").split(":");',
-      'createServer((_request, response) => response.end(message)).listen(Number(port), host);',
+      'const server = createServer((_request, response) => response.end(message));',
+      'server.listen(Number(port), host, () => {',
+      '  const address = server.address();',
+      '  if (!address || typeof address === "string") throw new Error("No TCP address allocated");',
+      '  process.stdout.write(`READY:${address.port}\\n`);',
+      '});',
     ].join("\n"));
 
     const { assembly } = synth({ ...common, artifact: { directory: source, entrypoint: "index.mjs" } });
@@ -109,53 +113,52 @@ test("starts the extracted artifact using its configured entrypoint and endpoint
     execFileSync("unzip", ["-q", zip, "-d", extracted]);
     expect(readFileSync(path.join(extracted, "index.mjs"), "utf8")).toContain('./nested/message.mjs');
     expect(statSync(path.join(extracted, "index.mjs")).mode & 0o777).toBe(0o644);
-    const port = await new Promise<number>((resolve, reject) => {
-      probe.once("error", reject);
-      probe.listen(0, "127.0.0.1", () => {
-        const address = probe.address();
-        if (!address || typeof address === "string") return reject(new Error("No TCP port allocated"));
-        resolve(address.port);
-      });
-    });
-    await new Promise<void>((resolve) => probe.close(() => resolve()));
-
     child = spawn("node", ["index.mjs"], {
       cwd: extracted,
-      env: { ...process.env, AWS_LAMBDA_HTTP_ENDPOINT: `127.0.0.1:${port}` },
-      stdio: ["ignore", "ignore", "pipe"],
+      env: { ...process.env, AWS_LAMBDA_HTTP_ENDPOINT: "127.0.0.1:0" },
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    let stdout = "";
     let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    const deadline = Date.now() + 5000;
-    let body: string | undefined;
-    while (Date.now() < deadline && body === undefined) {
+    const startupDeadline = Date.now() + 3000;
+    let port: number | undefined;
+    while (Date.now() < startupDeadline && port === undefined) {
       if (child.exitCode !== null) throw new Error(`Extracted server exited (${child.exitCode}): ${stderr}`);
-      try {
-        body = await new Promise<string>((resolve, reject) => {
-          const req = request({ host: "127.0.0.1", port, path: "/", method: "GET", timeout: 500 }, (res) => {
-            let data = "";
-            res.setEncoding("utf8");
-            res.on("data", (chunk) => { data += chunk; });
-            res.on("end", () => resolve(data));
-          });
-          req.on("timeout", () => req.destroy(new Error("request timeout")));
-          req.on("error", reject);
-          req.end();
-        });
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
+      const marker = stdout.match(/READY:(\d+)/);
+      if (marker) port = Number(marker[1]);
+      else await new Promise((resolve) => setTimeout(resolve, 20));
     }
+    if (port === undefined) throw new Error(`Extracted server readiness timed out; stdout: ${stdout}; stderr: ${stderr}`);
+
+    const body = await new Promise<string>((resolve, reject) => {
+      const req = request({ host: "127.0.0.1", port: port!, path: "/", method: "GET", timeout: 1000 }, (res) => {
+        let data = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { data += chunk; });
+        res.on("end", () => resolve(data));
+      });
+      req.on("timeout", () => req.destroy(new Error("request timeout")));
+      req.on("error", reject);
+      req.end();
+    });
     expect(body).toBe("from nested artifact");
   } finally {
     if (child && child.exitCode === null) {
       child.kill("SIGTERM");
-      await Promise.race([
-        new Promise<void>((resolve) => child!.once("exit", () => resolve())),
-        new Promise<void>((resolve) => setTimeout(() => { child!.kill("SIGKILL"); resolve(); }, 1000)),
+      const exited = await Promise.race([
+        new Promise<boolean>((resolve) => child!.once("exit", () => resolve(true))),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)),
       ]);
+      if (!exited && child.exitCode === null) {
+        child.kill("SIGKILL");
+        await new Promise<void>((resolve) => {
+          if (child!.exitCode !== null) return resolve();
+          child!.once("exit", () => resolve());
+        });
+      }
     }
-    if (probe.listening) await new Promise<void>((resolve) => probe.close(() => resolve()));
     rmSync(source, { recursive: true, force: true });
     rmSync(extracted, { recursive: true, force: true });
   }
