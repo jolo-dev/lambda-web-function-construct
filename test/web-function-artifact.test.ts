@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
@@ -10,8 +11,13 @@ import { zipArtifactDirectory } from "../src/web-function-artifact";
 
 const fixture = mkdtempSync(path.join(tmpdir(), "web-function-artifact-"));
 const artifactDirectory = path.join(fixture, "artifact");
-mkdirSync(artifactDirectory);
+mkdirSync(path.join(artifactDirectory, "nested"), { recursive: true });
 writeFileSync(path.join(artifactDirectory, "index.mjs"), "export {};");
+writeFileSync(path.join(artifactDirectory, "package.json"), JSON.stringify({ type: "module" }));
+writeFileSync(path.join(artifactDirectory, "nested", "package.json"), JSON.stringify({ name: "nested-runtime" }));
+writeFileSync(path.join(artifactDirectory, "nested", "runtime.mjs"), "export const answer = 42;");
+symlinkSync(path.join("nested", "runtime.mjs"), path.join(artifactDirectory, "linked-runtime.mjs"));
+symlinkSync("nested", path.join(artifactDirectory, "linked-directory"));
 process.on("exit", () => rmSync(fixture, { recursive: true, force: true }));
 
 const common = {
@@ -43,12 +49,6 @@ function findZip(directory: string): string {
 }
 
 test("packages a prebuilt artifact and exposes endpoint properties", () => {
-  mkdirSync(path.join(artifactDirectory, "nested"), { recursive: true });
-  writeFileSync(path.join(artifactDirectory, "package.json"), JSON.stringify({ type: "module" }));
-  writeFileSync(path.join(artifactDirectory, "nested", "package.json"), JSON.stringify({ name: "nested-runtime" }));
-  writeFileSync(path.join(artifactDirectory, "nested", "runtime.mjs"), "export const answer = 42;");
-  symlinkSync(path.join("nested", "runtime.mjs"), path.join(artifactDirectory, "linked-runtime.mjs"));
-  symlinkSync("nested", path.join(artifactDirectory, "linked-directory"));
   const { webFunction, template, assembly } = synth({
     ...common,
     artifact: { directory: artifactDirectory, entrypoint: "index.mjs" },
@@ -103,14 +103,65 @@ test.each([
   expect(() => synth({ ...common, ...props })).toThrow();
 });
 
+test("rejects an artifact larger than 512 MiB before ZIP creation", () => {
+  const directory = mkdtempSync(path.join(fixture, "oversized-artifact-"));
+  const sparseFile = path.join(directory, "large.bin");
+  const outputZip = path.join(fixture, "oversized.zip");
+  try {
+    writeFileSync(sparseFile, "");
+    truncateSync(sparseFile, 512 * 1024 * 1024 + 1);
+    let zipInvoked = false;
+    let filesCopied = 0;
+    expect(() => zipArtifactDirectory(
+      directory,
+      outputZip,
+      () => { zipInvoked = true; },
+      () => { filesCopied += 1; },
+    )).toThrow(/512 MiB/);
+    expect(zipInvoked).toBe(false);
+    expect(filesCopied).toBe(0);
+    expect(existsSync(outputZip)).toBe(false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(outputZip, { force: true });
+  }
+});
+
+test("creates byte-identical ZIPs for identical contents and changes hash when contents change", () => {
+  const directory = mkdtempSync(path.join(fixture, "deterministic-artifact-"));
+  const sourceFile = path.join(directory, "nested", "entry.js");
+  const firstZip = path.join(fixture, "deterministic-one.zip");
+  const secondZip = path.join(fixture, "deterministic-two.zip");
+  const changedZip = path.join(fixture, "deterministic-changed.zip");
+  try {
+    mkdirSync(path.dirname(sourceFile));
+    writeFileSync(path.join(directory, "package.json"), '{"type":"module"}');
+    writeFileSync(sourceFile, "export const value = 1;\n");
+    utimesSync(sourceFile, new Date("2001-01-01T00:00:00Z"), new Date("2001-01-01T00:00:00Z"));
+    zipArtifactDirectory(directory, firstZip);
+    utimesSync(sourceFile, new Date("2024-06-01T12:34:56Z"), new Date("2024-06-01T12:34:56Z"));
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2100);
+    zipArtifactDirectory(directory, secondZip);
+    const hash = (archive: string) => createHash("sha256").update(readFileSync(archive)).digest("hex");
+    expect(hash(secondZip)).toBe(hash(firstZip));
+
+    writeFileSync(sourceFile, "export const value = 2;\n");
+    zipArtifactDirectory(directory, changedZip);
+    expect(hash(changedZip)).not.toBe(hash(secondZip));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    for (const archive of [firstZip, secondZip, changedZip]) rmSync(archive, { force: true });
+  }
+});
+
 test("stages internal file and directory symlinks as regular content", () => {
   const outputZip = path.join(fixture, "staged.zip");
-  zipArtifactDirectory(artifactDirectory, outputZip, (args, cwd) => {
+  zipArtifactDirectory(artifactDirectory, outputZip, (args, cwd, input) => {
     expect(realpathSync(cwd)).not.toBe(realpathSync(artifactDirectory));
     expect(lstatSync(path.join(cwd, "linked-runtime.mjs")).isFile()).toBe(true);
     expect(lstatSync(path.join(cwd, "linked-directory")).isDirectory()).toBe(true);
     expect(readFileSync(path.join(cwd, "linked-runtime.mjs"), "utf8")).toContain("answer = 42");
-    execFileSync("zip", args, { cwd });
+    execFileSync("zip", args, { cwd, input });
   });
   rmSync(outputZip, { force: true });
 });
