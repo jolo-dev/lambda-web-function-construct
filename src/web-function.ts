@@ -45,6 +45,7 @@ import {
 	WebFunctionAuthType,
 	WebFunctionEndpointType,
 } from "./web-function-options";
+import { zipArtifactDirectory } from "./web-function-artifact";
 
 const webFunctionArchiveDirectory = mkdtempSync(
 	path.join(tmpdir(), "pawl-web-function-"),
@@ -517,14 +518,10 @@ export class WebFunction extends Construct {
 		return bundleFile;
 	}
 	private zipArtifact(directory: string): string {
-		const outputZip = path.join(webFunctionArchiveDirectory, `${this.node.addr}.zip`);
-		rmSync(outputZip, { force: true });
-		try {
-			execFileSync("zip", ["-q", "-r", outputZip, "."], { cwd: path.resolve(directory) });
-		} catch (err) {
-			throw new Error(`Failed to zip artifact directory "${directory}"`, { cause: err });
-		}
-		return outputZip;
+		return zipArtifactDirectory(
+			directory,
+			path.join(webFunctionArchiveDirectory, `${this.node.addr}.zip`),
+		);
 	}
 	private zipBundle(bundleFile: string): string {
 		const outputZip = path.join(
