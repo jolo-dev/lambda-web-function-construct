@@ -98,7 +98,7 @@ One delivery construct owns the Web Function resource policy in this initial int
 | Traffic | Origin | Caching |
 | --- | --- | --- |
 | Explicit immutable asset prefixes | Private S3 | Public, long-lived immutable caching, GET/HEAD only. |
-| SSR, framework data, mutations, APIs, arbitrary public files | Web Function | Authorization-keyed 1-second micro-cache (no cross-identity reuse); all supported HTTP methods. Originally specified as zero TTL, revised after live CloudFront rejection. |
+| SSR, framework data, mutations, APIs, arbitrary public files | Web Function | 1-second micro-cache keyed on Authorization, all cookies and all query strings (KEYALL); all supported HTTP methods. Originally zero TTL, revised after live CloudFront rejection. |
 
 Do not add SPA error rewrites or turn missing static objects into successful HTML. Keep framework-specific dynamic paths, including image-processing paths, on the server; their presence does not imply supported image optimization.
 
@@ -106,7 +106,7 @@ Forward required cookies, query strings, framework headers, and viewer authoriza
 
 The authorization-forwarding configuration needs a deliberate compatibility check: the Web Function OAC guide specifically requires `Authorization` in the cache policy for relevant GET/HEAD behaviors, whereas the managed `CachingDisabled` policy has no cache-key headers. Do not assume an origin request policy alone satisfies that guide, or silently enable caching to work around policy validation. Live probes must exercise GET and POST authorization.
 
-**Live gate and operator-approved revision (2026-11-18):** CloudFront rejected the originally planned policy (`MinTTL = DefaultTTL = MaxTTL = 0` plus `Authorization` in the cache key) with `HeaderBehavior is invalid for policy with caching disabled`. Per this spec the work stopped for a design decision. The operator approved a 1-second minimum/default/maximum TTL while retaining `Authorization` as the only cache-key header. This preserves per-viewer isolation (no cross-identity reuse) while permitting a same-identity response to be reused for at most one second; the previous “no shared caching at all” wording is superseded. Do not switch to managed `CachingDisabled`, and do not increase the TTL without a new decision.
+**Live gate and operator-approved revision (2026-11-18):** CloudFront rejected the originally planned policy (`MinTTL = DefaultTTL = MaxTTL = 0` plus `Authorization` in the cache key) with `HeaderBehavior is invalid for policy with caching disabled`. Per this spec the work stopped for a design decision. The operator approved a 1-second minimum/default/maximum TTL while retaining `Authorization` as the only cache-key header. This preserves per-viewer isolation (no cross-identity reuse) while permitting a same-identity response to be reused for at most one second; the previous “no shared caching at all” wording is superseded. **Further operator decision (`KEYALL`, 2026-11-18):** all cookies and all query strings are also part of the 1-second cache key, so different cookie/query variants cannot share a cached response even within one Authorization identity. The earlier temporary `ACCEPT` limitation was reversed by the operator. Do not switch to managed `CachingDisabled`, and do not increase the TTL without a new decision.
 
 Use a framework-compatible security response-headers policy for HSTS, content-type sniffing prevention, and framing protection. Do not impose a guessed CSP that breaks framework inline scripts. Document application-specific CSP and WAF as production hardening outside this proof.
 
@@ -179,7 +179,7 @@ For each deployed example verify:
 - Browser hydration, navigation, and the framework-native mutation work through CloudFront.
 - GET and POST preserve viewer authorization; cookies and query strings reach dynamic code correctly on a cache miss.
 - Distinct dynamic requests with different Authorization values are not served from a shared cache entry; the 1-second Authorization-keyed micro-cache may reuse a response only for the same identity. Verified live with distinct Authorization GET/POST probes.
-- **Operator-accepted limitation (`ACCEPT`, 2026-11-18):** within the 1-second window, requests with the same Authorization but different cookies or query strings may be served from the same cache entry and therefore may not reach the origin. The original requirement that cookie/query-distinct requests always be evaluated independently is formally superseded; do not claim full cookie/query cache isolation.
+- **`KEYALL` (2026-11-18):** all cookies and all query strings are part of the cache key alongside Authorization, so distinct cookie/query variants do not share a cached response within the 1-second window. This supersedes the earlier temporary `ACCEPT` decision; cookie/query cache isolation is claimed subject to live re-verification.
 - A static object is served successfully, produces a subsequent cache hit, has correct content type/cache headers, and remains inaccessible directly from S3.
 - Unsigned direct Web Function access is rejected; CloudFront-signed origin access succeeds.
 - Assets from a previous build remain available after an update.

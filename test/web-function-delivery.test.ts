@@ -513,7 +513,7 @@ test("routes dynamic traffic to the Web Function endpoint with the viewer Host e
   });
 });
 
-test("keys the dynamic cache policy only on Authorization with a one-second per-identity TTL", () => {
+test("keys the dynamic cache policy on Authorization, all cookies and query strings with a one-second TTL", () => {
   const template = Template.fromStack(deliveryStack("DynamicCachePolicyStack"));
   const dynamicPolicyId = logicalIdWhere(template, "AWS::CloudFront::CachePolicy", (resource) =>
     resource.Properties.CachePolicyConfig.DefaultTTL === 1);
@@ -525,8 +525,8 @@ test("keys the dynamic cache policy only on Authorization with a one-second per-
       MaxTTL: 1,
       ParametersInCacheKeyAndForwardedToOrigin: {
         HeadersConfig: { HeaderBehavior: "whitelist", Headers: ["Authorization"] },
-        CookiesConfig: { CookieBehavior: "none" },
-        QueryStringsConfig: { QueryStringBehavior: "none" },
+        CookiesConfig: { CookieBehavior: "all" },
+        QueryStringsConfig: { QueryStringBehavior: "all" },
         EnableAcceptEncodingGzip: false,
         EnableAcceptEncodingBrotli: false,
       },
@@ -614,7 +614,7 @@ test("the deployed viewer-request function refuses a request without a viewer Ho
 test("forwards cookies, query strings, and dynamic headers through the managed AllViewerExceptHostHeader policy", () => {
   const template = Template.fromStack(deliveryStack("DynamicForwardingPolicyStack"));
   // The managed policy forwards all viewer headers except Host, plus all cookies and query strings.
-  // Cookies and query strings are not cache keys; Authorization isolates identities for the 1-second TTL.
+  // Cookies and query strings are both cache keys (KEYALL), alongside Authorization, for the 1-second TTL.
   template.hasResourceProperties("AWS::CloudFront::Distribution", {
     DistributionConfig: {
       DefaultCacheBehavior: Match.objectLike({ OriginRequestPolicyId: allViewerExceptHostHeaderPolicyId }),

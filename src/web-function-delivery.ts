@@ -4,8 +4,10 @@ import { Duration, Names, RemovalPolicy, Stack } from "aws-cdk-lib";
 import {
 	AccessLevel,
 	AllowedMethods,
+	CacheCookieBehavior,
 	CacheHeaderBehavior,
 	CachePolicy,
+	CacheQueryStringBehavior,
 	CfnOriginAccessControl,
 	Distribution,
 	Function as CloudFrontFunction,
@@ -209,15 +211,17 @@ export class WebFunctionDelivery extends Construct {
 		});
 		// CloudFront rejects an Authorization cache-key header list when caching is disabled (all TTLs 0):
 		// "The parameter HeaderBehavior is invalid for policy with caching disabled" (live, 2026-11-18).
-		// A one-second TTL is the smallest practical value that keeps Authorization in the cache key, so
-		// responses are isolated per viewer identity; a same-identity response may be reused for at most 1s.
-		// Cookies and query strings are deliberately not cache keys; the origin request policy still forwards them.
+		// A one-second TTL is the smallest practical value that keeps Authorization in the cache key.
+		// Cookies and query strings are also part of the key (operator-approved KEYALL revision), so
+		// only byte-identical identity + cookie + query combinations can share a response, for at most 1s.
 		const dynamicTtl = Duration.seconds(1);
 		const dynamicCachePolicy = new CachePolicy(this, "DynamicCachePolicy", {
 			defaultTtl: dynamicTtl,
 			minTtl: dynamicTtl,
 			maxTtl: dynamicTtl,
 			headerBehavior: CacheHeaderBehavior.allowList("Authorization"),
+			cookieBehavior: CacheCookieBehavior.all(),
+			queryStringBehavior: CacheQueryStringBehavior.all(),
 		});
 		const proxyHeadersFunction = new CloudFrontFunction(this, "ProxyHeadersFunction", {
 			code: FunctionCode.fromInline(proxyHeadersFunctionCode),
