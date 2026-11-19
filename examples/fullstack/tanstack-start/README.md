@@ -28,7 +28,7 @@ Server-side behavior is implemented with TanStack Start route `server.handlers` 
 
 This example adds a stateless basic-auth flow to demonstrate a session-gated route on a Web Function:
 
-- `POST /api/login` (native server route) validates the posted credentials against the single demo user and, on success, writes an `iron-session` cookie (`app-session`, HTTP-only, `sameSite=lax`, `secure` in production, 7-day TTL). `GET /api/session` returns the signed-in email (or `{}`). `POST /api/logout` destroys the session and clears the cookie.
+- `POST /api/login` (native server route) validates the posted credentials against the single demo user and, on success, writes an `iron-session` cookie (`app-session`, HTTP-only, `sameSite=lax`, `secure` in production, 7-day TTL). `GET /api/session` returns the signed-in email (or `{}`). `POST /api/logout` clears the session cookie (see the stateless caveat below). `/logout` is also implemented as a redirect route that clears the cookie and returns home; it is a convenience route, and the tested endpoint is `/api/logout`.
 - Demo credentials: `demo@example.com` / `demo-password` (shown on the `/login` page). Bad credentials get `401 Invalid email or password`.
 - `/profile` is protected by the `_authed` layout route's `beforeLoad` guard: unauthenticated requests render the login panel instead of the profile. `NODE_ENV=production` on the Web Function makes the session cookie `secure`.
 - **Stateless logout:** logout only clears the browser cookie. A cookie copied before logout remains valid server-side until the 7-day TTL; there is no server-side session store to revoke.
