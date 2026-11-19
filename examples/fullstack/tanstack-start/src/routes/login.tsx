@@ -7,8 +7,7 @@ export const Route = createFileRoute("/login")({
 
 function Login() {
   return (
-    <main>
-      <h1>Sign in</h1>
+    <main className="aurora-shell">
       <LoginPanel />
     </main>
   );

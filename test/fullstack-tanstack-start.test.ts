@@ -329,6 +329,18 @@ test("login page is reachable and shows the demo credentials", async () => {
   expect(page.html).toContain("demo-password");
 });
 
+test("renders centered Aurora auth cards", async () => {
+  const login = new TextDecoder().decode((await getBounded(baseUrl(), "/login")).body);
+  expect(login).toContain("Welcome back");
+  expect(login).toContain("DEMO SESSION");
+  const profile = await fetch(new URL("/profile", baseUrl()), {
+    headers: { cookie: "invalid" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const html = await profile.text();
+  expect(html).toContain("Sign in");
+});
+
 test("login rejects bad credentials and accepts the demo user", async () => {
   const bad = await authPost("/api/login", { email: "demo@example.com", password: "wrong" });
   expect(bad.status).toBe(401);

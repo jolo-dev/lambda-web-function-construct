@@ -7,9 +7,22 @@ export const Route = createFileRoute("/_authed/profile")({
 function Profile() {
   const { user } = Route.useRouteContext();
   return (
-    <main>
-      <h1>Protected profile</h1>
-      <p id="profile-email">{user?.email}</p>
+    <main className="aurora-shell">
+      <section className="aurora-card mx-auto w-full max-w-md">
+        <p className="aurora-label">ACCOUNT</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Protected profile</h1>
+        <p id="profile-email" className="mt-4 text-lg font-semibold text-indigo-50">{user?.email}</p>
+        <p className="mt-1 text-sm text-indigo-200/70">
+          Signed in through the stateless app-session cookie on the Web Function.
+        </p>
+        <p className="aurora-warn mt-4 text-sm">
+          iron-session is stateless: logging out clears this browser's cookie but cannot revoke
+          previously issued copies.
+        </p>
+        <form method="post" action="/api/logout" className="mt-6">
+          <button type="submit" className="aurora-button w-full">Log out</button>
+        </form>
+      </section>
     </main>
   );
 }
