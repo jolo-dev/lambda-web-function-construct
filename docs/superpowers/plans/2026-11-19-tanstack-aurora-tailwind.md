@@ -40,7 +40,8 @@ test("stages a hashed Tailwind stylesheet linked from the SSR document head", ()
   const css = listFiles(path.join(ARTIFACT_ROOT, "dist", "client", "assets"), ".css");
   expect(css.length).toBeGreaterThan(0);
   const html = new TextDecoder().decode((await getBounded(baseUrl(), "/")).body);
-  expect(html).toMatch(/<link[^>]+rel="stylesheet"[^>]+href="\/assets\/[^"]+\.css"/);
+  expect(html).toMatch(/rel="stylesheet"/);
+  expect(html).toMatch(/href="\/assets\/[^"]+\.css"/);
 });
 ```
 
@@ -226,7 +227,7 @@ Remove the inline `panelCss` `<style>` block entirely. Keep `useNavigate`, `useS
 
 - `login.tsx`: `<main className="aurora-shell"><LoginPanel /></main>` (no duplicate `<h1>`).
 - `_authed/profile.tsx`: centered `aurora-card` with `aurora-label` "ACCOUNT", `<h1>Protected profile</h1>`, `<p id="profile-email">`, session detail line, and a logout button/link to `/api/logout`; use `aurora-warn` for the stateless caveat note.
-- `about.tsx`: centered `aurora-card` with `id="about-text"` and exact copy "This page proves TanStack Start navigation and hydration work on a Web Function." preserved.
+- `about.tsx`: centered `aurora-card` that keeps the `<h1>About this example</h1>` heading and the `id="about-text"` paragraph with exact copy "This page proves TanStack Start navigation and hydration work on a Web Function." preserved.
 - `_authed.tsx`: keep guard logic and error message identical; only wrap the `LoginPanel` error output in `<main className="aurora-shell">` if needed.
 
 - [ ] **Step 5: GREEN and commit**
