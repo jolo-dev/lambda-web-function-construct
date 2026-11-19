@@ -42,6 +42,8 @@ This example adds a stateless basic-auth flow to demonstrate a session-gated rou
 FULLSTACK_SESSION_PASSWORD="<at least 32 characters>" <cdk synth/deploy command>
 ```
 
+**Caveat:** `SESSION_PASSWORD` is stored as a plain Web Function revision environment variable. It is visible in the Lambda console and in the synthesized template. This is acceptable for this disposable demo, but it is not a production secret-management pattern; use a real secrets manager in production. Rotating the secret invalidates existing sessions.
+
 The local probe tests cover the login page reachability, credential rejection/acceptance, the protected profile, logout cookie clearing, the stateless-replay caveat, and the stack's session-secret and production-cookie wiring.
 
 ## Build and stage

@@ -20,7 +20,7 @@ export interface TanStackStartExampleStackProps extends StackProps {
 /**
  * TanStack Start on a Web Function with hashed client assets served from private S3.
  * Thin composition only: the framework build is explicit (build:artifact) and never run during synthesis.
- * Not deployed by this change.
+ * Bounded live deployment of this stack was completed and cleaned up; see `docs/superpowers/plans/2026-11-18-tanstack-basic-auth-web-function.md`.
  */
 export class TanStackStartExampleStack extends Stack {
   public readonly webFunction: WebFunction;
