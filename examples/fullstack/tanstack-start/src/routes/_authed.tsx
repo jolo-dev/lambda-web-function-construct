@@ -14,8 +14,7 @@ export const Route = createFileRoute("/_authed")({
 function AuthError({ error }: ErrorComponentProps) {
   if (!(error instanceof Error) || error.message !== "Not authenticated") throw error;
   return (
-    <main>
-      <h1>Sign in</h1>
+    <main className="aurora-shell">
       <LoginPanel />
     </main>
   );

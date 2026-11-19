@@ -2,15 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { DEMO_USER } from "../utils/demo-user";
 
-const panelCss = `
-.login-panel { max-width: 22rem; display: grid; gap: 0.75rem; }
-.login-panel form { display: grid; gap: 0.5rem; }
-.login-panel label { display: grid; gap: 0.25rem; }
-.login-panel input { padding: 0.375rem 0.5rem; }
-.login-hint { color: #555; }
-.login-error { color: #b00020; }
-`;
-
 export function LoginPanel() {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string>(DEMO_USER.email);
@@ -34,30 +25,44 @@ export function LoginPanel() {
   }
 
   return (
-    <section className="login-panel">
-      <style>{panelCss}</style>
-      <form onSubmit={submit}>
-        <label htmlFor="login-email">Email</label>
-        <input
-          id="login-email"
-          name="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <label htmlFor="login-password">Password</label>
-        <input
-          id="login-password"
-          name="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button type="submit">Sign in</button>
+    <section aria-label="DEMO SESSION" className="aurora-card mx-auto w-full max-w-md">
+      <p className="aurora-label">DEMO SESSION</p>
+      <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Welcome back</h1>
+      <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="login-email" className="text-sm text-indigo-200/80">Email</label>
+          <input
+            id="login-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            className="aurora-input"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "login-error" : undefined}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="login-password" className="text-sm text-indigo-200/80">Password</label>
+          <input
+            id="login-password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            className="aurora-input"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "login-error" : undefined}
+          />
+        </div>
+        <button type="submit" className="aurora-button w-full">Sign in</button>
       </form>
-      <p className="login-hint">
+      <p className="mt-4 text-sm text-indigo-200/70">
         Demo credentials: {DEMO_USER.email} / {DEMO_USER.password}
       </p>
-      {error ? <p className="login-error" id="login-error">{error}</p> : null}
+      {error ? <p className="aurora-warn mt-3 text-sm font-semibold" id="login-error" role="alert">{error}</p> : null}
     </section>
   );
 }

@@ -174,6 +174,15 @@ describe("staged TanStack Start artifact", () => {
 		expect(assetFiles.length, "hashed client assets under /assets").toBeGreaterThan(0);
 	});
 
+	test("stages a hashed Tailwind stylesheet linked from the SSR document head", async () => {
+		requireArtifact();
+		const css = listFiles(path.join(ARTIFACT_ROOT, "dist", "client", "assets"), ".css");
+		expect(css.length).toBeGreaterThan(0);
+		const html = new TextDecoder().decode((await getBounded(baseUrl(), "/")).body);
+		expect(html).toMatch(/rel="stylesheet"/);
+		expect(html).toMatch(/href="\/assets\/[^"]+\.css"/);
+	});
+
 	test("keeps mutable/unhashed public files in the client output", () => {
 		requireArtifact();
 		expect(existsSync(path.join(ARTIFACT_ROOT, "dist", "client", "robots.txt"))).toBe(true);
@@ -251,6 +260,13 @@ describe("running the extracted TanStack Start artifact", () => {
 		expect(timestamp).toBeLessThanOrEqual(Date.now() + 1_000);
 	});
 
+	test("renders the Aurora split hero copy", async () => {
+		const html = new TextDecoder().decode((await getBounded(baseUrl(), "/")).body);
+		expect(html).toContain("The whole stack, running live.");
+		expect(html).toContain("CloudFront");
+		expect(html).toContain("Web Function");
+	});
+
 	test("a native server route mutation validates input and returns a computed result", async () => {
 		const valid = await postJson(baseUrl(), "/api/square", { value: "12" }, { timeoutMs: 10_000 });
 		expect(valid.status).toBe(200);
@@ -311,6 +327,18 @@ test("login page is reachable and shows the demo credentials", async () => {
   expect(page.html).toContain("Sign in");
   expect(page.html).toContain("demo@example.com");
   expect(page.html).toContain("demo-password");
+});
+
+test("renders centered Aurora auth cards", async () => {
+  const login = new TextDecoder().decode((await getBounded(baseUrl(), "/login")).body);
+  expect(login).toContain("Welcome back");
+  expect(login).toContain("DEMO SESSION");
+  const profile = await fetch(new URL("/profile", baseUrl()), {
+    headers: { cookie: "invalid" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const html = await profile.text();
+  expect(html).toContain("Sign in");
 });
 
 test("login rejects bad credentials and accepts the demo user", async () => {

@@ -7,6 +7,7 @@ This example demonstrates a production TanStack Start server on `WebFunction` wi
 - `@tanstack/react-start` `1.169.5` (exact)
 - `@tanstack/react-router` `1.170.46` (aligned with react-start dependencies)
 - `vite` `^8.0.0` resolved in `bun.lock`
+- `tailwindcss` `^4.2.2` (resolved to 4.3.5) via the `@tailwindcss/vite` plugin
 - `react` / `react-dom` `19.2.5`
 - `srvx` (transitive via start plugin; used by the launcher to serve the fetch handler)
 
@@ -23,6 +24,17 @@ Requires Node `>=22.12.0` (react-start engine). Local verification used Node 24.
 The Web Function launcher (`index.js`) parses `AWS_LAMBDA_HTTP_ENDPOINT`, serves static files from `dist/client` as a local convenience, and uses `srvx/node` `serve()` to run the exported fetch handler on the provided host:port. In production, CloudFront routes `/assets/*` to S3; dynamic paths go to the Web Function.
 
 Server-side behavior is implemented with TanStack Start route `server.handlers` (native server routes), including a validating mutation at `/api/square`, native auth endpoints at `/api/login`, `/api/logout`, and `/api/session` (see below), and a probe-only identity route at `/__probe/identity` (returns 404 unless `FULLSTACK_PROBE_MARKER` is set).
+
+## Styling: Tailwind CSS 4 with the Aurora Glass design
+
+Client styling is built with **Tailwind CSS 4** through the `@tailwindcss/vite` plugin. `src/styles/app.css` imports `tailwindcss`, defines an Aurora design system in `@theme` (indigo/cyan aurora tones on a dark night-sky gradient), and declares the component classes used across all routes in `@layer components`:
+
+- Layout: `aurora-shell` (centered max-width shell).
+- Surfaces: `aurora-card` / `aurora-card-tight` (frosted glass cards — translucent white over the aurora gradient, `backdrop-blur-xl`, indigo borders).
+- Controls: `aurora-button` (indigo-to-cyan gradient), `aurora-input`, `aurora-link`.
+- Text: `aurora-label` (uppercase kicker), `aurora-ok`, `aurora-warn`.
+
+The `@layer base` block sets the dark `color-scheme`, fixed aurora background, cyan selection/caret, and thin scrollbars, and a `prefers-reduced-motion` block neutralizes transitions, animations, iteration counts, and scrolling. Tailwind emits the stylesheet as a content-hashed `dist/client/assets/app-*.css` referenced from the SSR document head, so it rides the immutable `/assets/*` CloudFront/S3 path like the JS bundles. The palette is a deliberate, named design choice; `app.css` carries a scoped `impeccable-disable` comment on the button gradient for the UI anti-pattern detector, and the detector re-run passed with that single scoped suppression the only outstanding finding.
 
 ## Demo basic-auth session (stateless)
 
@@ -62,7 +74,7 @@ bun run build:artifact
 bun test test/fullstack-tanstack-start.test.ts
 ```
 
-The test synthesizes the stack (with a test session password), extracts the Lambda ZIP, resolves literal runtime `require()` paths, and runs the extracted artifact through `examples/fullstack/shared/probe.ts` on a non-default port. It verifies SSR HTML, native server mutation validation, native auth endpoints (login reject/accept, protected `/profile`, logout), navigation reachability, hashed client asset serving, mutable public file serving, and the session-secret stack wiring. 19 tests.
+The test synthesizes the stack (with a test session password), extracts the Lambda ZIP, resolves literal runtime `require()` paths, and runs the extracted artifact through `examples/fullstack/shared/probe.ts` on a non-default port. It verifies SSR HTML, native server mutation validation, native auth endpoints (login reject/accept, protected `/profile`, logout), navigation reachability, hashed client asset serving, mutable public file serving, and the session-secret stack wiring. 22 tests.
 
 ## CDK routing
 
@@ -76,7 +88,7 @@ The test synthesizes the stack (with a test session password), extracts the Lamb
 
 - **Linux Arm64 artifact proof is local plus bounded live.** The current artifact (including the basic-auth routes) was rebuilt in a pinned `linux/arm64` Node 24.22.1 container (Bun 1.4.4, frozen lockfile), with ARM aarch64 native modules and `node_modules/iron-session` present. The auth flow itself was live-verified in the bounded `FullstackTanStackStart` rollout recorded in `docs/superpowers/plans/2026-11-18-tanstack-basic-auth-web-function.md` (login page, credential reject/accept, session, protected `/profile`, logout, cache-key behavior, full cleanup); browser hydration/click and streaming remain unverified.
 - **Unauthenticated `/profile` returns HTTP 500 (demo-only).** The `_authed` guard throws and TanStack renders the route `errorComponent` (the login panel), so the live probe observed HTTP 500 with login content rather than 200. This is acceptable for this demo; a real app would likely redirect or return a login status instead.
-- **No browser hydration/click proof in this task.** HTTP and RSC-like navigation checks only; full browser interaction not verified.
+- **No automated browser hydration/click/streaming proof.** HTTP and RSC-like navigation checks only; no automated browser runner exists in the project. However, the live Aurora deployment was inspected once in headless Chromium, and hydration markers were observed in the rendered DOM.
 - **Streaming:** the server uses `defaultStreamHandler`; incremental streaming delivery to CloudFront/Lambda was not separately measured.
 - Does not demonstrate ISR/cache consistency, deployment-skew-safe old server actions, image optimization, edge runtime, WebSockets, or multi-region behavior.
 - The revised 1-second `KEYALL` cache policy (Authorization + all cookies + all query strings) was accepted and verified live; the original zero-TTL policy was rejected. See `docs/superpowers/plans/2026-11-18-fullstack-preflight.md` for the TanStack live results.
