@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["app", "vite.config.ts", "server", "build-artifact.mjs", "index.js", "stack.ts"]
+  "include": ["src", "vite.config.ts", "server", "build-artifact.mjs", "index.js", "stack.ts"]
 }
