@@ -31,7 +31,7 @@
 - Modify: `examples/fullstack/tanstack-start/stack.ts`
 - Test: `test/fullstack-tanstack-start.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `test/fullstack-tanstack-start.test.ts`:
 
@@ -65,12 +65,12 @@ test("stack rejects a short session password", () => {
 
 Also change the existing `beforeAll` stack construction to pass `sessionPassword: TEST_SESSION_PASSWORD`, and pass `env: { SESSION_PASSWORD: TEST_SESSION_PASSWORD, NODE_ENV: "production" }` to `startServer`.
 
-- [ ] **Step 2: Run the tests to verify RED**
+- [x] **Step 2: Run the tests to verify RED**
 
 Run: `cd /Users/jolo/Development/lambda-web-function-construct/.worktrees/fullstack-framework-examples && bun test test/fullstack-tanstack-start.test.ts -t "session"`
 Expected: FAIL with TypeScript/assertion errors for missing `sessionPassword` and absent env vars.
 
-- [ ] **Step 3: Implement the shared validator**
+- [x] **Step 3: Implement the shared validator**
 
 Create `examples/fullstack/shared/session-secret.ts`:
 
@@ -85,7 +85,7 @@ export function readSessionPassword(value: string | undefined): string {
 }
 ```
 
-- [ ] **Step 4: Implement stack wiring**
+- [x] **Step 4: Implement stack wiring**
 
 In `examples/fullstack/tanstack-start/stack.ts`, add `readonly sessionPassword: string` to props, validate it with `readSessionPassword(props.sessionPassword)`, and add to the `WebFunction` options:
 
@@ -102,17 +102,19 @@ In `examples/fullstack/cdk-app.ts`, import `readSessionPassword, SESSION_PASSWOR
 sessionPassword: readSessionPassword(process.env[SESSION_PASSWORD_ENV]),
 ```
 
-- [ ] **Step 5: Run the focused tests to verify GREEN**
+- [x] **Step 5: Run the focused tests to verify GREEN**
 
 Run: `bun test test/fullstack-tanstack-start.test.ts -t "session"`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add examples/fullstack/shared/session-secret.ts examples/fullstack/cdk-app.ts examples/fullstack/tanstack-start/stack.ts test/fullstack-tanstack-start.test.ts
 git commit -m "Wire TanStack session secret into Web Function"
 ```
+
+**Execution record (backfilled, verified facts):** Completed in commit `d7003ad`: created shared `session-secret.ts` (`readSessionPassword` ≥32-char check), wired `SESSION_PASSWORD` and `NODE_ENV=production` into the TanStack `stack.ts` revision environment, and read `FULLSTACK_SESSION_PASSWORD` in the shared `cdk-app.ts`. The two focused tests went RED→GREEN; the full suite reached 209/209 at that point.
 
 ---
 
@@ -123,12 +125,12 @@ git commit -m "Wire TanStack session secret into Web Function"
 - Create: `examples/fullstack/tanstack-start/src/utils/demo-user.ts`
 - Modify: `examples/fullstack/tanstack-start/package.json`, `bun.lock`
 
-- [ ] **Step 1: Add iron-session**
+- [x] **Step 1: Add iron-session**
 
 Run: `cd examples/fullstack/tanstack-start && bun add iron-session@^9`
 Expected: `package.json` and `bun.lock` updated; `node_modules/iron-session` exists.
 
-- [ ] **Step 2: Write the demo user module**
+- [x] **Step 2: Write the demo user module**
 
 Create `src/utils/demo-user.ts`:
 
@@ -149,7 +151,7 @@ export function demoCredentialsMatch(email: string, password: string): boolean {
 }
 ```
 
-- [ ] **Step 3: Write the session module**
+- [x] **Step 3: Write the session module**
 
 Create `src/utils/session.ts`:
 
@@ -183,17 +185,19 @@ export function getAppSession() {
 }
 ```
 
-- [ ] **Step 4: Verify imports compile**
+- [x] **Step 4: Verify imports compile**
 
 Run: `cd examples/fullstack/tanstack-start && bunx tsc --noEmit -p tsconfig.json`
 Expected: no errors. If JSX generator errors appear because routes are not added yet, re-run after Task 3.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add examples/fullstack/tanstack-start/package.json examples/fullstack/tanstack-start/bun.lock examples/fullstack/tanstack-start/src/utils
 git commit -m "Add iron-session and demo user utilities"
 ```
+
+**Execution record (backfilled, verified facts):** Completed in commit `3477201` (iron-session 9.1.0 plus the `session.ts`/`demo-user.ts` utilities) with a follow-up in commit `5c1adfa` (tsconfig include fix after review so the real typecheck passes).
 
 ---
 
@@ -210,7 +214,7 @@ git commit -m "Add iron-session and demo user utilities"
 - Modify: `examples/fullstack/tanstack-start/src/routes/__root.tsx`, `src/routes/index.tsx`, `src/routeTree.gen.ts`
 - Test: `test/fullstack-tanstack-start.test.ts`
 
-- [ ] **Step 1: Write failing HTTP auth tests**
+- [x] **Step 1: Write failing HTTP auth tests**
 
 Add to `test/fullstack-tanstack-start.test.ts`:
 
@@ -293,12 +297,12 @@ test("profile is protected and logout clears the browser cookie (stateless repla
 });
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run: `bun test test/fullstack-tanstack-start.test.ts -t "login|profile"`
 Expected: FAIL with 404s for `/api/login`, `/api/session`, `/api/logout`, `/profile`.
 
-- [ ] **Step 3: Implement native auth endpoints**
+- [x] **Step 3: Implement native auth endpoints**
 
 Create `src/routes/api.login.ts`:
 
@@ -367,7 +371,7 @@ export const Route = createFileRoute("/api/session")({
 });
 ```
 
-- [ ] **Step 4: Implement root context and protected route**
+- [x] **Step 4: Implement root context and protected route**
 
 In `src/routes/__root.tsx`, add `createServerFn` and session lookup, then expose context:
 
@@ -478,7 +482,7 @@ export const Route = createFileRoute("/_authed/profile")({
 
 Add a `Link` to `/login` and `/profile` on the existing home page without removing SSR time, counter, square form, or `/about`.
 
-- [ ] **Step 5: Regenerate the route tree and run tests**
+- [x] **Step 5: Regenerate the route tree and run tests**
 
 Run:
 ```bash
@@ -487,12 +491,14 @@ cd /Users/jolo/Development/lambda-web-function-construct/.worktrees/fullstack-fr
 ```
 `bun run build` regenerates `src/routeTree.gen.ts`; `bun run build:artifact` refreshes the staged native artifact that the test harness actually boots. Expected: route tree includes `/api/login`, `/api/logout`, `/api/session`, `/login`, `/profile`; all focused tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add examples/fullstack/tanstack-start/src test/fullstack-tanstack-start.test.ts
 git commit -m "Add stateless basic-auth flow to TanStack example"
 ```
+
+**Execution record (backfilled, verified facts):** Completed in commit `60155c0`: auth routes/UI/protected profile implemented; the focused tests went RED (3 failures) then GREEN (19/19); a reviewer verified the client bundle contains no `node:crypto`/session-secret code.
 
 ---
 
@@ -502,7 +508,7 @@ git commit -m "Add stateless basic-auth flow to TanStack example"
 - Artifacts under `examples/fullstack/artifacts/tanstack-start/` (git-ignored)
 - Modify: `examples/fullstack/tanstack-start/README.md`, `examples/fullstack/shared/README.md`
 
-- [ ] **Step 1: Rebuild native artifact**
+- [x] **Step 1: Rebuild native artifact**
 
 Run:
 ```bash
@@ -510,7 +516,7 @@ cd examples/fullstack/tanstack-start && bun run build:artifact
 ```
 Expected: staged native artifact contains `node_modules/iron-session` and updated `dist/`.
 
-- [ ] **Step 2: Run focused and full local checks**
+- [x] **Step 2: Run focused and full local checks**
 
 Run:
 ```bash
@@ -522,7 +528,7 @@ bun run test:types
 ```
 Expected: focused tests pass, full suite passes (baseline 207/207 plus new auth tests), JSII 0 errors/warnings, type checks pass.
 
-- [ ] **Step 3: Rebuild Linux Arm64 artifact**
+- [x] **Step 3: Rebuild Linux Arm64 artifact**
 
 Run the same pinned-container build used previously, scoped to this example:
 
@@ -532,7 +538,7 @@ bash examples/fullstack/shared/build-arm64.sh examples/fullstack/tanstack-start 
 ```
 Expected: `linux/arm64`, Node v24.22.1, artifact staged under `examples/fullstack/artifacts/tanstack-start/linux-arm64`.
 
-- [ ] **Step 4: Update docs and commit**
+- [x] **Step 4: Update docs and commit**
 
 Document the auth flow, demo credentials, `FULLSTACK_SESSION_PASSWORD`, the fact that this variable gates synthesis of all three stacks in the shared `cdk-app.ts`, and that this is demo-only auth, in the example README. Commit:
 
@@ -540,6 +546,8 @@ Document the auth flow, demo credentials, `FULLSTACK_SESSION_PASSWORD`, the fact
 git add examples/fullstack/tanstack-start/README.md examples/fullstack/shared/README.md
 git commit -m "Document TanStack basic-auth example"
 ```
+
+**Execution record (backfilled, verified facts):** Completed in commits `2df3d9c` (docs + artifact rebuild) and `6864036` (docs precision fix): native and arm64 artifacts rebuilt with iron-session (pinned container `linux/arm64` Node v24.22.1); full suite 212/212; JSII 0 errors/warnings; `bun run test:types` passes. The arm64 runtime smoke applied to the earlier pre-auth artifacts only; the post-auth rebuild was checked for platform and artifact content, not re-run live.
 
 ---
 
