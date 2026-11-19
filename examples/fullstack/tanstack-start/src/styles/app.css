@@ -37,7 +37,7 @@
     @apply inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40 transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300;
   }
   .aurora-input {
-    @apply w-full rounded-xl border border-indigo-300/25 bg-aurora-950/50 px-3 py-2 text-sm text-indigo-50 placeholder:text-indigo-200/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300;
+    @apply w-full rounded-xl border border-indigo-300/25 bg-aurora-950/50 px-3 py-2 text-base text-indigo-50 placeholder:text-indigo-200/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300;
   }
   .aurora-link { @apply text-indigo-200 underline-offset-4 hover:text-cyan-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300; }
   .aurora-ok { @apply text-emerald-300; }

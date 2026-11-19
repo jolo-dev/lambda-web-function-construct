@@ -25,7 +25,7 @@ export function LoginPanel() {
   }
 
   return (
-    <section className="aurora-card mx-auto w-full max-w-md">
+    <section aria-label="DEMO SESSION" className="aurora-card mx-auto w-full max-w-md">
       <p className="aurora-label">DEMO SESSION</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Welcome back</h1>
       <form className="mt-6 flex flex-col gap-4" onSubmit={submit}>
@@ -34,9 +34,13 @@ export function LoginPanel() {
           <input
             id="login-email"
             name="email"
+            type="email"
+            autoComplete="email"
             className="aurora-input"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "login-error" : undefined}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -45,9 +49,12 @@ export function LoginPanel() {
             id="login-password"
             name="password"
             type="password"
+            autoComplete="current-password"
             className="aurora-input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "login-error" : undefined}
           />
         </div>
         <button type="submit" className="aurora-button w-full">Sign in</button>
