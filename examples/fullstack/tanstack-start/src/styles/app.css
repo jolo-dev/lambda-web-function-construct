@@ -24,6 +24,9 @@
       linear-gradient(140deg, var(--color-aurora-800), var(--color-aurora-900) 58%, var(--color-aurora-950));
     background-attachment: fixed;
   }
+  ::selection { background: rgba(34, 211, 238, 0.32); color: #f8fafc; }
+  input, textarea { caret-color: var(--color-aurora-cyan); }
+  * { scrollbar-color: rgba(165, 180, 252, 0.4) transparent; scrollbar-width: thin; }
 }
 
 @layer components {
@@ -32,8 +35,9 @@
     @apply rounded-2xl border border-indigo-300/25 bg-white/[0.06] p-6 shadow-2xl shadow-indigo-950/40 backdrop-blur-xl;
   }
   .aurora-card-tight { @apply rounded-xl border border-indigo-300/20 bg-white/[0.04] p-4; }
-  .aurora-label { @apply text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-indigo-200/70; }
+  .aurora-label { @apply text-xs font-semibold uppercase tracking-[0.18em] text-indigo-200/70; }
   .aurora-button {
+    /* impeccable-disable-next-line ai-color-palette: intentional Aurora Glass indigo-to-cyan palette, operator-approved */
     @apply inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40 transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300;
   }
   .aurora-input {
@@ -45,10 +49,11 @@
   .aurora-button:disabled { @apply cursor-not-allowed opacity-50; }
 }
 
-::selection { background: rgba(34, 211, 238, 0.32); color: #f8fafc; }
-input, textarea { caret-color: var(--color-aurora-cyan); }
-* { scrollbar-color: rgba(165, 180, 252, 0.4) transparent; scrollbar-width: thin; }
-
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }

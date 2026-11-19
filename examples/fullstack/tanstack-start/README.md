@@ -7,6 +7,7 @@ This example demonstrates a production TanStack Start server on `WebFunction` wi
 - `@tanstack/react-start` `1.169.5` (exact)
 - `@tanstack/react-router` `1.170.46` (aligned with react-start dependencies)
 - `vite` `^8.0.0` resolved in `bun.lock`
+- `tailwindcss` `^4.2.2` (resolved to 4.3.5) via the `@tailwindcss/vite` plugin
 - `react` / `react-dom` `19.2.5`
 - `srvx` (transitive via start plugin; used by the launcher to serve the fetch handler)
 
@@ -23,6 +24,17 @@ Requires Node `>=22.12.0` (react-start engine). Local verification used Node 24.
 The Web Function launcher (`index.js`) parses `AWS_LAMBDA_HTTP_ENDPOINT`, serves static files from `dist/client` as a local convenience, and uses `srvx/node` `serve()` to run the exported fetch handler on the provided host:port. In production, CloudFront routes `/assets/*` to S3; dynamic paths go to the Web Function.
 
 Server-side behavior is implemented with TanStack Start route `server.handlers` (native server routes), including a validating mutation at `/api/square`, native auth endpoints at `/api/login`, `/api/logout`, and `/api/session` (see below), and a probe-only identity route at `/__probe/identity` (returns 404 unless `FULLSTACK_PROBE_MARKER` is set).
+
+## Styling: Tailwind CSS 4 with the Aurora Glass design
+
+Client styling is built with **Tailwind CSS 4** through the `@tailwindcss/vite` plugin. `src/styles/app.css` imports `tailwindcss`, defines an Aurora design system in `@theme` (indigo/cyan aurora tones on a dark night-sky gradient), and declares the component classes used across all routes in `@layer components`:
+
+- Layout: `aurora-shell` (centered max-width shell).
+- Surfaces: `aurora-card` / `aurora-card-tight` (frosted glass cards — translucent white over the aurora gradient, `backdrop-blur-xl`, indigo borders).
+- Controls: `aurora-button` (indigo-to-cyan gradient), `aurora-input`, `aurora-link`.
+- Text: `aurora-label` (uppercase kicker), `aurora-ok`, `aurora-warn`.
+
+The `@layer base` block sets the dark `color-scheme`, fixed aurora background, cyan selection/caret, and thin scrollbars, and a `prefers-reduced-motion` block neutralizes transitions, animations, iteration counts, and scrolling. Tailwind emits the stylesheet as a content-hashed `dist/client/assets/app-*.css` referenced from the SSR document head, so it rides the immutable `/assets/*` CloudFront/S3 path like the JS bundles. The palette is a deliberate, named design choice; `app.css` carries a scoped `impeccable-disable` comment on the button gradient for the UI anti-pattern detector.
 
 ## Demo basic-auth session (stateless)
 
@@ -62,7 +74,7 @@ bun run build:artifact
 bun test test/fullstack-tanstack-start.test.ts
 ```
 
-The test synthesizes the stack (with a test session password), extracts the Lambda ZIP, resolves literal runtime `require()` paths, and runs the extracted artifact through `examples/fullstack/shared/probe.ts` on a non-default port. It verifies SSR HTML, native server mutation validation, native auth endpoints (login reject/accept, protected `/profile`, logout), navigation reachability, hashed client asset serving, mutable public file serving, and the session-secret stack wiring. 19 tests.
+The test synthesizes the stack (with a test session password), extracts the Lambda ZIP, resolves literal runtime `require()` paths, and runs the extracted artifact through `examples/fullstack/shared/probe.ts` on a non-default port. It verifies SSR HTML, native server mutation validation, native auth endpoints (login reject/accept, protected `/profile`, logout), navigation reachability, hashed client asset serving, mutable public file serving, and the session-secret stack wiring. 22 tests.
 
 ## CDK routing
 

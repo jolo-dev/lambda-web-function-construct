@@ -44,7 +44,7 @@ function Home() {
 
   return (
     <main className="aurora-shell">
-      <nav className="flex items-center justify-between gap-4">
+      <nav aria-label="Primary" className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span aria-hidden="true" className="h-2.5 w-8 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500" />
           <span className="text-sm font-semibold tracking-wide text-indigo-100">
@@ -123,7 +123,7 @@ function Home() {
             <button id="square-submit" type="submit" className="aurora-button">Square</button>
           </form>
           {result ? <p id="square-result" className="aurora-ok mt-3 text-sm font-semibold">{result}</p> : null}
-          {error ? <p id="square-error" className="aurora-warn mt-3 text-sm font-semibold">{error}</p> : null}
+          {error ? <p id="square-error" role="alert" className="aurora-warn mt-3 text-sm font-semibold">{error}</p> : null}
         </section>
       </div>
     </main>
