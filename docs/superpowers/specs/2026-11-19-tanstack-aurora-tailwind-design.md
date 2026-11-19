@@ -1,7 +1,7 @@
 # TanStack Start Aurora Glass Tailwind restyle
 
 Date: 2026-11-19
-Status: Approved by operator in brainstorming; implementation and live redeploy not yet authorized.
+Status: Approved by operator in brainstorming, including the in-place live update with no cleanup. Implementation planning and execution are the next gates.
 
 ## Goal
 
@@ -25,9 +25,9 @@ This is a scoped visual refinement of existing code, not a new product surface o
 | `examples/fullstack/tanstack-start/vite.config.ts` | Add `tailwindcss()` to the plugin list alongside `tanstackStart()`. |
 | `examples/fullstack/tanstack-start/src/styles/app.css` (new) | `@import "tailwindcss";` plus an `@theme` block defining Aurora tokens and a few base/component utility classes for the gradient background, glass surface, gradient button, and focus ring. |
 | `examples/fullstack/tanstack-start/src/routes/__root.tsx` | Import the stylesheet with `?url` and add a `<link rel="stylesheet" href={appCss} />` in `head.links`; keep `fetchUser`/`beforeLoad` unchanged. |
-| `src/routes/index.tsx` | Replace markup with split hero + live-proof layout and glass controls; preserve server function, loader, state, and all test IDs. |
-| `src/components/LoginPanel.tsx` | Replace the inline `<style>` block and markup with Tailwind classes; centered card, labeled fields, inline error, gradient submit button; keep JSON POST and navigation behavior. |
-| `src/routes/login.tsx`, `src/routes/_authed/profile.tsx`, `src/routes/about.tsx` | Wrap content in the shared shell/card classes using Tailwind; preserve IDs and copy. |
+| `examples/fullstack/tanstack-start/src/routes/index.tsx` | Replace markup with split hero + live-proof layout and glass controls; preserve server function, loader, state, element IDs, and the exact asserted copy. |
+| `examples/fullstack/tanstack-start/src/components/LoginPanel.tsx` | Replace the inline `<style>` block and markup with Tailwind classes; centered card, labeled fields, inline error, gradient submit button; keep JSON POST and navigation behavior. |
+| `examples/fullstack/tanstack-start/src/routes/login.tsx`, `.../src/routes/_authed/profile.tsx`, `.../src/routes/about.tsx` | Wrap content in the shared shell/card classes using Tailwind; preserve IDs and copy. |
 | Tests/docs/plan record | Existing tests remain; add any needed assertions only for new accessible names; record styling work and live redeploy in the implementation plan. |
 
 Tailwind's generated CSS is a hashed client asset under `dist/client/assets/`, already routed to private S3 through the `/assets/*` cache behavior. No CloudFront or CDK source change is expected.
@@ -45,14 +45,14 @@ Tailwind's generated CSS is a hashed client asset under `dist/client/assets/`, a
 
 No changes to: SSR timestamp loader, client counter, `square` server function validation, `/api/login`, `/api/session`, `/api/logout`, `_authed` guard, `fetchUser`, probe identity, or the KEYALL cache policy.
 
-All existing IDs used by `test/fullstack-tanstack-start.test.ts` must remain: `ssr-time`, `about-link`, `count`, `increment`, `square-form`, `value`, `square-submit`, `square-result`, `square-error`, `login-error`, `profile-email`. Tests must still pass unchanged except for any purely additive accessibility assertion.
+All existing IDs in the example must remain: `ssr-time`, `about-link`, `count`, `increment`, `square-form`, `value`, `square-submit`, `square-result`, `square-error`, `login-error`, `profile-email`. The current test suite does **not** assert those IDs; it asserts visible copy/structure. The exact strings `TanStack Start on Lambda Web Function`, `Rendered on the server at`, `href="/about"`, `About this example`, `Sign in`, `demo@example.com`, and `demo-password` must therefore survive the restyle. Tests should pass unchanged except for any purely additive accessibility assertion.
 
 Verification before live update:
 1. `cd examples/fullstack/tanstack-start && bun install --frozen-lockfile && bun run build`.
 2. Rebuild native artifact (`bun run build:artifact`).
 3. From repo root: focused TanStack tests, full `bun test`, `bun run build`, `bun run test:types`, `bun run test:types:cognito`.
 4. Rebuild Linux Arm64 artifact with the pinned container command used in the prior task.
-5. Run Impeccable's mechanical detector **once** on the changed UI files: `scripts/impeccable detect --json <changed targets>`; fix everything it reports in one batch, then stop.
+5. Run Impeccable's mechanical detector **once** on the changed UI files using the skill-provided launcher: `/Users/jolo/.pi/agent/skills/impeccable/scripts/impeccable detect --json <changed targets>` (run from the repo root). Fix everything it reports in one batch, then stop. If that launcher is unavailable, report it rather than claiming the gate ran.
 
 ## Live update
 
@@ -60,7 +60,7 @@ Update the retained `FullstackTanStackStart` stack in place using profile `jolo`
 
 ## Risks and limitations
 
-- Tailwind 4 Vite plugin compatibility with pinned Vite 8 must be verified by build; if `?url` CSS import fails, use a direct CSS import in the client entry and record the deviation rather than changing the framework version.
+- Tailwind 4 Vite plugin compatibility with pinned Vite 8 must be verified by build; if `?url` CSS import fails, use a direct CSS import in the client entry and record the deviation rather than changing the framework version. A direct client-side import means SSR HTML relies on the client bundle to inject styles, which can affect first-paint styling; verify the live check accordingly.
 - A fresh session secret invalidates cookies issued by the previous retained deployment.
 - Browser hydration/click behavior and streaming timing remain unverified unless a browser pass is added; visual inspection of rendered pages is not proof of hydration.
 - The unauthenticated `/profile` route still returns HTTP 500 via the error boundary; this visual change does not alter that behavior.
