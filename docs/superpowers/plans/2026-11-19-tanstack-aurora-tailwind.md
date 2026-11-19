@@ -117,7 +117,12 @@ Create `src/styles/app.css`:
   .aurora-link { @apply text-indigo-200 underline-offset-4 hover:text-cyan-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300; }
   .aurora-ok { @apply text-emerald-300; }
   .aurora-warn { @apply text-amber-300; }
+  .aurora-button:disabled { @apply cursor-not-allowed opacity-50; }
 }
+
+::selection { background: rgba(34, 211, 238, 0.32); color: #f8fafc; }
+input, textarea { caret-color: var(--color-aurora-cyan); }
+* { scrollbar-color: rgba(165, 180, 252, 0.4) transparent; scrollbar-width: thin; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
@@ -178,10 +183,10 @@ Expected: FAIL on missing hero copy.
 - [ ] **Step 3: Replace home markup only**
 
 Keep the `square` server function, route `loader`, state (`count`, `value`, `result`, `error`), and `submit` handler byte-for-byte. Replace the `Home` JSX with a `<main className="aurora-shell">` containing:
-- top nav with monogram `◈ START / WEB FUNCTION`, links `About` (`id="about-link"`), `Sign in`, `Profile`;
+- top nav with a CSS-drawn mark (a small cyan-to-indigo rounded bar, no Unicode glyph) plus the wordmark `TanStack Start / Web Function`, links `About` (`id="about-link"`), `Sign in`, `Profile`;
 - `section` with `lg:grid lg:grid-cols-[1.2fr_0.8fr] gap-8 items-center`;
-- left column: `p.aurora-label` "DEPLOYED PROOF", `h1` containing exactly `The whole stack, running live.`, subtitle mentioning `CloudFront` and `Web Function`;
-- right column: `aside.aurora-card` with rows `GET /` + `● 200`, `SSR` + timestamp (`id="ssr-time"`, exact prefix `Rendered on the server at`), `app-session` + `SECURE`, and a cyan/indigo gradient progress bar;
+- left column: `h1` containing exactly `The whole stack, running live.` with no eyebrow/kicker above it, followed by a `max-w-prose` subtitle mentioning `CloudFront` and `Web Function`;
+- right column: `aside.aurora-card` with a small `DEPLOYED PROOF` label in the card header (not above a heading), rows `GET /` + a CSS status dot and `200`, `SSR` + timestamp (`id="ssr-time"`, exact prefix `Rendered on the server at`), `app-session` + `SECURE`, and a cyan/indigo gradient progress bar;
 - lower grid with two `section.aurora-card-tight` panels: counter (`id="count"`, button `id="increment"`) and square form (`id="square-form"`, input `id="value"`, button `id="square-submit"`, result/error IDs preserved).
 Use Tailwind utility classes plus the shared component classes from `app.css`. No external assets.
 
