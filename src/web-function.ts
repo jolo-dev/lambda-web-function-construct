@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -45,6 +45,7 @@ import {
 	WebFunctionAuthType,
 	WebFunctionEndpointType,
 } from "./web-function-options";
+import { zipArtifactDirectory } from "./web-function-artifact";
 
 const webFunctionArchiveDirectory = mkdtempSync(
 	path.join(tmpdir(), "pawl-web-function-"),
@@ -63,10 +64,20 @@ export interface WebFunctionCognitoOptions {
 	readonly logoutUrls?: string[];
 }
 
+/** A self-contained prebuilt Node.js deployment directory and startup file. */
+export interface WebFunctionArtifactOptions {
+	/** Root directory of the deployment package. */
+	readonly directory: string;
+	/** JavaScript startup file relative to the artifact root. */
+	readonly entrypoint: string;
+}
+
 /** Properties for configuring a Lambda Web Function and its HTTPS endpoint. */
 export interface WebFunctionProps {
 	/** Path to the TypeScript or JavaScript HTTP server entry file. */
-	readonly entry: string;
+	readonly entry?: string;
+	/** Prebuilt deployment directory; mutually exclusive with entry. */
+	readonly artifact?: WebFunctionArtifactOptions;
 	/** Name assigned to the Lambda Web Function. */
 	readonly functionName: string;
 	/** Authentication mode for the endpoint. */
@@ -114,7 +125,8 @@ const cognitoRedirectUrlSchema = z.string().refine((value) => {
 }, "Cognito URLs must use HTTPS (or HTTP loopback), without credentials or fragments");
 
 const WebFunctionPropsSchema = z.object({
-	entry: z.string().min(1),
+	entry: z.string().min(1).optional(),
+	artifact: z.object({ directory: z.string().min(1), entrypoint: z.string().min(1) }).optional(),
 	functionName: z.string().min(1),
 	authType: z
 		.custom<WebFunctionAuthType>(
@@ -158,6 +170,31 @@ const WebFunctionPropsSchema = z.object({
 		})
 		.optional(),
 }).superRefine((props, ctx) => {
+	if (Boolean(props.entry) === Boolean(props.artifact)) {
+		ctx.addIssue({ code: "custom", path: ["entry"], message: "Exactly one of entry or artifact is required" });
+	}
+	if (props.artifact) {
+		const { directory, entrypoint } = props.artifact;
+		if (path.isAbsolute(entrypoint) || path.win32.isAbsolute(entrypoint) || entrypoint.split(/[\\/]/).includes("..")) {
+			ctx.addIssue({ code: "custom", path: ["artifact", "entrypoint"], message: "Artifact entrypoint must be relative and contain no traversal" });
+		} else {
+			try {
+				const root = realpathSync(directory);
+				if (!statSync(root).isDirectory()) throw new Error("not a directory");
+				const resolved = realpathSync(path.resolve(root, entrypoint));
+				const relative = path.relative(root, resolved);
+				if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || !statSync(resolved).isFile()) throw new Error("invalid entrypoint");
+			} catch {
+				ctx.addIssue({ code: "custom", path: ["artifact"], message: "Artifact root must be a directory and entrypoint a regular file within it" });
+			}
+		}
+	}
+	if (props.environmentVariables?.AWS_LAMBDA_HTTP_ENDPOINT !== undefined) {
+		ctx.addIssue({ code: "custom", path: ["environmentVariables", "AWS_LAMBDA_HTTP_ENDPOINT"], message: "AWS_LAMBDA_HTTP_ENDPOINT is reserved" });
+	}
+	if (props.artifact && props.environmentVariables?.AWS_LAMBDA_NODEJS_ENTRYPOINT !== undefined && props.environmentVariables.AWS_LAMBDA_NODEJS_ENTRYPOINT !== props.artifact.entrypoint) {
+		ctx.addIssue({ code: "custom", path: ["environmentVariables", "AWS_LAMBDA_NODEJS_ENTRYPOINT"], message: "Conflicts with artifact entrypoint" });
+	}
 	if (!props.cognito) return;
 	if (props.authType !== WebFunctionAuthType.APPLICATION_MANAGED.value) {
 		ctx.addIssue({
@@ -211,7 +248,13 @@ export class WebFunction extends Construct {
 	public readonly functionArn: string;
 	/** The HTTPS domain name of the Lambda Web Function endpoint. */
 	public readonly endpointDomainName: string;
-	/** The revision identifier created for the bundled entry. */
+	/** The ARN of the HTTPS endpoint. */
+	public readonly endpointArn: string;
+	/** Authentication mode configured for the endpoint. */
+	public readonly authType: WebFunctionAuthType;
+	/** Region behavior configured for the endpoint. */
+	public readonly endpointType: WebFunctionEndpointType;
+	/** The revision identifier created for the deployment. */
 	public readonly revisionId: string;
 	/** User pool created only when cognito is configured. Retained on stack deletion. */
 	public readonly userPool?: UserPool;
@@ -220,6 +263,8 @@ export class WebFunction extends Construct {
 	/** Managed login domain created only when cognito is configured. */
 	public readonly userPoolDomain?: UserPoolDomain;
 	private readonly constructId: string;
+	private readonly revision: CfnWebFunctionRevision;
+	private deliveryOwner?: Construct;
 
 	constructor(scope: Construct, id: string, props: WebFunctionProps) {
 		super(scope, id);
@@ -296,6 +341,7 @@ export class WebFunction extends Construct {
 
 		// Create the immutable code revision before routing traffic to it.
 		const webFunctionRevision = this.uploadToS3(webProps, webFunction);
+		this.revision = webFunctionRevision;
 
 		// Route the endpoint to the revision created above, not a guessed revision ID.
 		const webFunctionEndpoint = new CfnWebFunctionEndpoint(
@@ -319,6 +365,9 @@ export class WebFunction extends Construct {
 
 		this.functionArn = webFunction.webFunctionRef.functionArn;
 		this.endpointDomainName = webFunctionEndpoint.attrDomainName;
+		this.endpointArn = webFunctionEndpoint.attrEndpointArn;
+		this.authType = props.authType;
+		this.endpointType = props.endpointType;
 		this.revisionId = webFunctionRevision.attrRevisionId;
 
 		new CfnOutput(this, "webFunctionUrl", {
@@ -332,12 +381,40 @@ export class WebFunction extends Construct {
 		});
 	}
 
+	/**
+	 * Throws when a WebFunctionDelivery already owns this Web Function. Does not claim ownership.
+	 * @internal
+	 */
+	public _assertDeliveryAvailable(): void {
+		if (this.deliveryOwner) {
+			throw new Error(
+				`WebFunction ${this.node.path} already has a delivery attached at ${this.deliveryOwner.node.path}`,
+			);
+		}
+	}
+
+	/**
+	 * Records the WebFunctionDelivery that owns this Web Function's CloudFront invoke policy.
+	 * Also orders the Revision after the delivery's static uploads, so assets are present before
+	 * the Revision can be routed. Call only after the owner's constructs are fully created, so a
+	 * failed construction leaves no claim.
+	 * @internal
+	 */
+	public _attachDelivery(owner: Construct, staticUploads: Construct[]): void {
+		this._assertDeliveryAvailable();
+		for (const upload of staticUploads) {
+			this.revision.node.addDependency(upload);
+		}
+		this.deliveryOwner = owner;
+	}
+
 	private uploadToS3(
 		webProps: ParsedWebFunctionProps,
 		webFunction: CfnWebFunction,
 	) {
-		const bundleFile = this.bundleEntry(webProps.entry);
-		const zipFile = this.zipBundle(bundleFile);
+		const zipFile = webProps.artifact
+			? this.zipArtifact(webProps.artifact.directory)
+			: this.zipBundle(this.bundleEntry(webProps.entry!));
 		const codeBucket = new Bucket(
 			this,
 			`${this.constructId}-web-function-code-bucket`,
@@ -424,7 +501,9 @@ export class WebFunction extends Construct {
 				},
 				serviceConfig: {
 					executionRoleArn: iamRole.roleArn,
-					environmentVariables: webProps.environmentVariables,
+					environmentVariables: webProps.artifact
+						? { ...webProps.environmentVariables, AWS_LAMBDA_NODEJS_ENTRYPOINT: webProps.artifact.entrypoint }
+						: webProps.environmentVariables,
 					maxConcurrencyPerEnvironment: webProps.maxConcurrencyPerEnvironment,
 					timeoutSeconds: webProps.timeoutSeconds,
 					telemetryConfig:
@@ -467,6 +546,12 @@ export class WebFunction extends Construct {
 			});
 		}
 		return bundleFile;
+	}
+	private zipArtifact(directory: string): string {
+		return zipArtifactDirectory(
+			directory,
+			path.join(webFunctionArchiveDirectory, `${this.node.addr}.zip`),
+		);
 	}
 	private zipBundle(bundleFile: string): string {
 		const outputZip = path.join(

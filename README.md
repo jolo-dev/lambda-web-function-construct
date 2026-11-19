@@ -99,6 +99,12 @@ CDK library, JSII, and JSII packaging versions are managed by `package.json` and
 
 `bun run build` invokes the local JSII compiler and emits the `.jsii` assembly used by Construct Hub to generate language-aware API documentation.
 
+## Fullstack framework examples (local proof)
+
+Production-server examples for **Next.js 16.4.6** (standalone), **Nuxt 4.6.4** (Nitro `node-server`), and **TanStack Start 1.169.5** live under [`examples/fullstack/`](examples/fullstack/). Each example stages a deployable artifact, composes `WebFunction` with `WebFunctionDelivery` (immutable static assets from private S3, dynamic traffic to an IAM-protected Web Function), and has local extracted-artifact smoke tests proving SSR, a native server mutation with validation, navigation, and static/public asset serving. See the per-example READMEs and [`examples/fullstack/shared/README.md`](examples/fullstack/shared/README.md).
+
+**Status:** local proof, local Linux Arm64 container proof, and **bounded live probes of Next.js and TanStack Start** (deploy, HTTP checks, cleanup) using the operator-approved 1-second cache policy keyed on Authorization, all cookies, and all query strings (`KEYALL`). The earlier all-zero-TTL policy was rejected live; a viewer-function `x-forwarded-*` header error was found live and fixed with `x-public-*` headers. Nuxt was then deployed, inspected by the operator, and **deleted on request**; the retired identifiers and cleanup verification are in [`examples/fullstack/shared/live-resources.md`](examples/fullstack/shared/live-resources.md). Browser hydration, streaming, and two-build old-asset retention remain unverified. All three artifacts were built in the pinned `linux/arm64` Node 24.22.1 container (`bash examples/fullstack/shared/build-arm64-artifacts.sh`); the runtime smoke covered the earlier pre-auth artifacts, and the post-auth TanStack rebuild was platform/artifact-content checked locally, with its live rollout the next gate. Further rollout is gated by [`examples/fullstack/shared/aws-checklist.md`](examples/fullstack/shared/aws-checklist.md). Build tooling never runs during CDK synthesis.
+
 ## Web Functions Benchmark
 
 Start with **[Web Functions Benchmark](examples/benchmark/WEB_FUNCTIONS_BENCHMARK.md)**,

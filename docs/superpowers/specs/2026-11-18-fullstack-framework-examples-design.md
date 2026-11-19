@@ -16,7 +16,7 @@ This is production-server compatibility, not feature parity with a managed frame
 - Build frameworks explicitly before CDK synthesis; do not run framework builds in constructors.
 - Keep CloudFront and browser-asset storage in a separate optional construct.
 - Use CloudFront with private S3 for explicit immutable asset paths and an IAM-protected Web Function Endpoint for dynamic traffic.
-- Disable shared caching for dynamic traffic; preserve request data needed by framework rendering and mutations.
+- Disable cross-identity shared caching for dynamic traffic; preserve request data needed by framework rendering and mutations. **Operator-approved revision (2026-11-18):** a 1-second, Authorization-keyed micro-cache replaces the originally planned all-zero TTL after CloudFront rejected that policy live. See the routing section below.
 - Retain previous hashed assets across updates. Disposable examples remove assets on stack destruction.
 - Use single-region examples and CloudFront-provided domains initially.
 - Provide explicit Linux Arm64 production builds. Native local builds are development conveniences, not deployment evidence.
@@ -98,13 +98,15 @@ One delivery construct owns the Web Function resource policy in this initial int
 | Traffic | Origin | Caching |
 | --- | --- | --- |
 | Explicit immutable asset prefixes | Private S3 | Public, long-lived immutable caching, GET/HEAD only. |
-| SSR, framework data, mutations, APIs, arbitrary public files | Web Function | No shared response caching; all supported HTTP methods. |
+| SSR, framework data, mutations, APIs, arbitrary public files | Web Function | 1-second micro-cache keyed on Authorization, all cookies and all query strings (KEYALL); all supported HTTP methods. Originally zero TTL, revised after live CloudFront rejection. |
 
 Do not add SPA error rewrites or turn missing static objects into successful HTML. Keep framework-specific dynamic paths, including image-processing paths, on the server; their presence does not imply supported image optimization.
 
-Forward required cookies, query strings, framework headers, and viewer authorization. Exclude viewer `Host` from the origin request and use the endpoint hostname. A viewer-request CloudFront Function overwrites `X-Forwarded-Host` from the actual viewer host and `X-Forwarded-Proto` with the enforced HTTPS scheme; never trust client-supplied copies. Framework launchers/configuration must consume this controlled public-origin context where needed, particularly for redirects and mutation origin checks.
+Forward required cookies, query strings, framework headers, and viewer authorization. Exclude viewer `Host` from the origin request and use the endpoint hostname. A viewer-request CloudFront Function copies the actual viewer host and enforced HTTPS scheme into custom `X-Public-Host` and `X-Public-Proto` headers; it removes client-supplied `Forwarded`. **Live correction (2026-11-18):** CloudFront Functions reject adding or deleting any `X-Forwarded-*` header (`FunctionValidationError`), so the original `X-Forwarded-Host`/`X-Forwarded-Proto` overwrite requirement is implemented with custom headers. Applications must ignore client-supplied `X-Forwarded-*` values and read `X-Public-Host`/`X-Public-Proto` when they need the public origin context. None of the three examples currently consume either header, so redirects/mutation origin behavior behind CloudFront remains unverified.
 
-The authorization-forwarding configuration needs a deliberate compatibility check: the Web Function OAC guide specifically requires `Authorization` in the cache policy for relevant GET/HEAD behaviors, whereas the managed `CachingDisabled` policy has no cache-key headers. Do not assume an origin request policy alone satisfies that guide, or silently enable caching to work around policy validation. Planning must resolve a service-supported configuration satisfying both no-shared-caching and authorization preservation before declaring this module deployable. Live probes must exercise GET and POST authorization. If AWS rejects the required combination, stop and bring the conflict back for a design decision rather than weaken either requirement.
+The authorization-forwarding configuration needs a deliberate compatibility check: the Web Function OAC guide specifically requires `Authorization` in the cache policy for relevant GET/HEAD behaviors, whereas the managed `CachingDisabled` policy has no cache-key headers. Do not assume an origin request policy alone satisfies that guide, or silently enable caching to work around policy validation. Live probes must exercise GET and POST authorization.
+
+**Live gate and operator-approved revision (2026-11-18):** CloudFront rejected the originally planned policy (`MinTTL = DefaultTTL = MaxTTL = 0` plus `Authorization` in the cache key) with `HeaderBehavior is invalid for policy with caching disabled`. Per this spec the work stopped for a design decision. The operator approved a 1-second minimum/default/maximum TTL while retaining `Authorization` as the only cache-key header. This preserves per-viewer isolation (no cross-identity reuse) while permitting a same-identity response to be reused for at most one second; the previous “no shared caching at all” wording is superseded. **Further operator decision (`KEYALL`, 2026-11-18):** all cookies and all query strings are also part of the 1-second cache key, so different cookie/query variants cannot share a cached response even within one Authorization identity. The earlier temporary `ACCEPT` limitation was reversed by the operator. Do not switch to managed `CachingDisabled`, and do not increase the TTL without a new decision.
 
 Use a framework-compatible security response-headers policy for HSTS, content-type sniffing prevention, and framing protection. Do not impose a guessed CSP that breaks framework inline scripts. Document application-specific CSP and WAF as production hardening outside this proof.
 
@@ -175,8 +177,9 @@ For each deployed example verify:
 
 - CloudFront HTTPS serves request-time SSR and correct public-origin redirects.
 - Browser hydration, navigation, and the framework-native mutation work through CloudFront.
-- GET and POST preserve viewer authorization; cookies and query strings reach dynamic code correctly.
-- Distinct dynamic requests are not served from a shared cache, including requests with different cookie/authorization values.
+- GET and POST preserve viewer authorization; cookies and query strings reach dynamic code correctly on a cache miss.
+- Distinct dynamic requests with different Authorization values are not served from a shared cache entry; the 1-second Authorization-keyed micro-cache may reuse a response only for the same identity. Verified live with distinct Authorization GET/POST probes.
+- **`KEYALL` (2026-11-18):** all cookies and all query strings are part of the cache key alongside Authorization, so distinct cookie/query variants do not share a cached response within the 1-second window. This supersedes the earlier temporary `ACCEPT` decision; cookie/query cache isolation was verified in the bounded Next.js live probe (distinct combinations Miss, exact repeat Hit within 1 second).
 - A static object is served successfully, produces a subsequent cache hit, has correct content type/cache headers, and remains inaccessible directly from S3.
 - Unsigned direct Web Function access is rejected; CloudFront-signed origin access succeeds.
 - Assets from a previous build remain available after an update.

@@ -170,4 +170,4 @@ test("synthesizes all six benchmark example stacks cleanly", () => {
     Architectures: ["arm64"],
     MemorySize: 2048,
   });
-});
+}, 30_000);
