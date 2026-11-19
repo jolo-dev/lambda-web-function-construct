@@ -367,6 +367,9 @@ Result: ✅ success, deployment time 42.24 s (total 70.45 s), CloudFormation cha
 - `GET /about` → 200 with the `<h1>About this example</h1>` heading.
 - `GET /__probe/identity` → 404.
 - Direct unsigned `GET https://t3lhsldkbxxhkqcs.h73.lambda-web.eu-central-1.on.aws/` → 403.
+- Unauthenticated `GET /profile` → HTTP 500 with the login UI rendered through the route `errorComponent`/error boundary (`_authed` guard throws; known demo limitation, documented in the example README) rather than a 200 or a login redirect.
+
+**Note:** the recorded CSS asset hash (`app-CunnxGMM.css`) is build-specific and changes on every rebuild of the artifact; the immutable `/assets/*` cache behavior makes that safe.
 
 **Rendered-page inspection (headless Chromium, 1440×900 desktop):** hydration markers present in the DOM dump; computed styles show the Aurora background gradient, `#e0e7ff` body text, system sans font, `.aurora-card` glass with `backdrop-filter: blur(24px)` and indigo border, gradient `.aurora-button`, translucent `.aurora-input`; stylesheet loaded; no horizontal overflow on `/` or `/login`. No visual defects found; no styling fixes were needed.
 

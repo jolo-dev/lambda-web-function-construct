@@ -10,7 +10,7 @@ Support code for the Next.js, Nuxt, and TanStack Start Web Function examples. It
 - `build-native.sh`: host build for rapid iteration. Output is development evidence only, not deployment evidence.
 - `session-secret.ts`: shared synthesis-time gate for the fullstack examples' session secret. `readSessionPassword` requires `FULLSTACK_SESSION_PASSWORD` (or the stack prop) to be at least 32 characters; the shared `cdk-app.ts` deploy entry reads it, so a missing or short value fails synthesis of all three example stacks.
 - `aws-checklist.md`: gated live-AWS deployment/cleanup checklist with results for the bounded Next.js, TanStack Start, and Nuxt probes.
-- `live-resources.md`: retired Nuxt deployment record — identifiers, live probe results, and verified cleanup (operator asked to delete it after testing).
+- `live-resources.md`: record of both live deployments — the retained TanStack Start deployment (current URL/distribution/endpoint, intentionally kept for viewing) and the retired Nuxt deployment (identifiers, live probe results, and verified cleanup; operator asked to delete it after testing).
 
 Tests: `test/fullstack-probe.test.ts`.
 
