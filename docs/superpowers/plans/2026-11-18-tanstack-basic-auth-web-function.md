@@ -547,7 +547,7 @@ git commit -m "Document TanStack basic-auth example"
 
 **Files:** no source changes; deployment only.
 
-- [ ] **Step 1: Preflight gate**
+- [x] **Step 1: Preflight gate**
 
 Confirm: profile `jolo`, account `246350246460`, region `eu-central-1`, stack `FullstackTanStackStart` absent, and a fresh `FULLSTACK_SESSION_PASSWORD` of ≥32 characters available in the shell only. Do not commit the secret.
 
@@ -557,7 +557,7 @@ AWS_PROFILE=jolo AWS_REGION=eu-central-1 aws cloudformation describe-stacks --st
 ```
 Expected: caller is `246350246460`; stack does not exist.
 
-- [ ] **Step 2: Deploy with the bounded plan**
+- [x] **Step 2: Deploy with the bounded plan**
 
 ```bash
 FULLSTACK_SESSION_PASSWORD='<32+ char value>' \
@@ -567,11 +567,11 @@ bunx cdk deploy FullstackTanStackStart --app 'bun run examples/fullstack/cdk-app
 ```
 Limits: ≤100 HTTP requests, ≤10 min propagation wait, stop on unexpected failure.
 
-- [ ] **Step 3: Probe through CloudFront**
+- [x] **Step 3: Probe through CloudFront**
 
 Verify: unsigned direct 403; SSR; `/about`; `/api/square` valid/invalid; hashed `/assets/*` with immutable headers; `robots.txt`; probe identity 404; login page; invalid login 401; valid login `app-session` Set-Cookie with HttpOnly/Secure/SameSite=Lax; `/api/session`; unauthenticated `/profile` shows login; authenticated `/profile` shows demo email; logout clears the browser cookie (an old copied cookie remains valid until TTL because iron-session is stateless); KEYALL Miss/Hit behavior. Record domain, distribution ID, endpoint, status codes, headers, and results.
 
-- [ ] **Step 4: Cleanup and verify**
+- [x] **Step 4: Cleanup and verify**
 
 ```bash
 AWS_PROFILE=jolo AWS_REGION=eu-central-1 CDK_DEFAULT_ACCOUNT=246350246460 CDK_DEFAULT_REGION=eu-central-1 \
@@ -579,6 +579,34 @@ bunx cdk destroy FullstackTanStackStart --app 'bun run examples/fullstack/cdk-ap
 ```
 Then delete the bootstrap asset objects uploaded for this deployment, and verify the stack, distribution, asset bucket, and objects are gone.
 
-- [ ] **Step 5: Record results and commit**
+- [x] **Step 5: Record results and commit**
 
 Update `docs/superpowers/plans/2026-11-18-tanstack-basic-auth-web-function.md` with live results and commit.
+
+**Execution record (2026-11-19):** Steps 1–5 completed as the operator-approved bounded live rollout; no source files changed. Every check below was run against the deployed stack and recorded as observed.
+
+**Preflight:** `sts get-caller-identity` (profile `jolo`, `eu-central-1`) returned account `246350246460`, `arn:aws:iam::246350246460:user/jolo`; `FullstackTanStackStart` did not exist; the three pre-existing CloudFront distributions traced to unrelated S3-website origins (no fullstack leftovers); no bootstrap-asset objects newer than this work existed. `FULLSTACK_SESSION_PASSWORD` was generated in the shell with `openssl rand -base64 48`, used only as an environment variable for `cdk deploy`, and never written to any file or commit.
+
+**Deploy:** the bounded `bunx cdk deploy FullstackTanStackStart` succeeded once (deployment time 277.65s, total 299.21s; no propagation retries needed; distribution already `Deployed`). CDK printed the known `Unknown resource type` validation warnings for `AWS::Lambda::WebFunctionRevision`/`WebFunctionEndpoint` (expected for this resource type). Identifiers: stack ARN `arn:aws:cloudformation:eu-central-1:246350246460:stack/FullstackTanStackStart/5f1a5980-e3ee-11f1-9a36-06ffdfc3684f`; CloudFront distribution `E2237L9L15JA2L`, domain `d2u0kis9nnuln8.cloudfront.net`; Web Function endpoint `86ffnpstrcsld89n.h73.lambda-web.eu-central-1.on.aws`; revision `rev-7fpff`; asset bucket `fullstacktanstackstart-deliveryassetbucket87363ba9-gwyhewpvsfc9`; code bucket `fullstacktanstackstart-appappwebfunctioncodebucket-nmszaou3r3dn` (both `DESTROY`).
+
+**Bounded HTTP probes (~26 requests total, all through CloudFront `d2u0kis9nnuln8.cloudfront.net` except the direct-endpoint check):**
+
+- Unsigned direct endpoint `https://86ffnpstrcsld89n.h73.lambda-web.eu-central-1.on.aws/` → 403 Forbidden ("not authorized to access this endpoint").
+- SSR `/` → 200, `text/html; charset=utf-8`, `Rendered on the server at <!-- -->2026-11-19T08:02:53.913Z` (React comment separator; matches request time), `X-Cache: Miss`.
+- `/about` → 200, `About this example`.
+- `/api/square` POST `{"value":"7"}` → 200 `{"result":"49"}`; `{"value":"-1"}` → 400 `{"error":"Value must be a number from 0 to 1000"}`.
+- Hashed asset `/assets/index-Cy7U5vkO.js` → 200, `content-type: text/javascript`, `cache-control: public, max-age=31536000, immutable`, S3 ETag present.
+- `/robots.txt` → 200 `text/plain; charset=utf-8` with `User-agent: * / Allow: /`.
+- `/__probe/identity` → 404 `Not found`, no probe marker.
+- `/login` → 200 containing `Sign in`, `demo@example.com`, `demo-password`.
+- Invalid `/api/login` → 401 `{"error":true,"message":"Invalid email or password"}`, no `Set-Cookie`.
+- Valid `/api/login` → 200 `{"email":"demo@example.com"}` and `Set-Cookie: app-session=Fe26.2*1*…; Max-Age=604740; Path=/; HttpOnly; Secure; SameSite=Lax` (HttpOnly, Secure, SameSite=Lax all present).
+- `/api/session` with that cookie → 200 `{"email":"demo@example.com"}`.
+- Unauthenticated `/profile` → shows the full login panel (`Sign in`, `Demo credentials: demo@example.com / demo-password`) — **observed as HTTP 500**, not 200, because the `_authed` guard throws `Not authenticated` and TanStack renders the route `errorComponent` (LoginPanel); the local tests assert the HTML content only, so live matches local. Recorded honestly as the framework's error-boundary status, not a weakened check.
+- Authenticated `/profile` (old cookie) → 200 with `<p id="profile-email">demo@example.com</p>`.
+- `/api/logout` POST with the cookie → 200 `{"ok":true}` and `Set-Cookie: app-session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax` (browser cookie cleared). `/profile` with the cleared cookie shows the login panel; `/profile` with the previously copied cookie still shows `demo@example.com`, confirming the **stateless** logout: iron-session `destroy()` only clears the browser cookie and cannot revoke a copied one until the 7-day TTL expires.
+- KEYALL cache-key behavior on `/`: `Authorization: Probe-A + /`, `Probe-A + /?kroll1=abc123`, `Probe-A + cookie kroll=abc123 + /`, `Probe-B + /` each `X-Cache: Miss`; the exact repeat `Probe-A + cookie kroll=abc123 + /?kroll1=abc123` returned Miss then `Hit` (and Hit again) within the 1-second window. Distinct Authorization/cookie/query combinations therefore do not share a cache entry.
+
+**Cleanup:** `bunx cdk destroy FullstackTanStackStart --force` succeeded after one deviation — the approved destroy command does not set `FULLSTACK_SESSION_PASSWORD`, but `cdk-app.ts` synthesizes all three stacks and rejects an absent secret, so destroy was re-run with a fresh throwaway shell-only value (destroy never reads it). The three bootstrap objects uploaded at 07:53:50Z for this deployment (`6f818458…zip` 33,250,625 B revision ZIP, `ba8992f9…zip` 109,274 B static ZIP, `cbfbbd57…json` 32,525 B template — all brand-new keys) were deleted; because the bootstrap bucket is versioned, their specific versions and delete markers were also purged so nothing of this deployment (including the template that embeds the session env) remains. Verification: `describe-stacks` → does not exist; `get-distribution E2237L9L15JA2L` → `NoSuchDistribution` (3 unrelated distributions remain, all pre-existing); no `fullstacktanstackstart*` buckets; bootstrap-asset listing for this date → empty, including object versions for those keys.
+
+**Deviations/notes:** (a) destroy required the session-password env (above); (b) unauthenticated/cleared-cookie `/profile` is HTTP 500 with the login panel rendered (error-component semantics, matches local tests); (c) versioned-bucket version purge beyond the plain object delete, as recorded; (d) no browser/hydration or streaming-timing probes were run (curl only), consistent with the plan's probe list; (e) browser hydration and click navigation remain unverified, as before.
