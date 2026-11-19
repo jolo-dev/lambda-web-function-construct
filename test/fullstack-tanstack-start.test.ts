@@ -18,6 +18,7 @@ import {
 } from "../examples/fullstack/shared/probe";
 
 const EXAMPLE_ROOT = path.join(import.meta.dir, "..", "examples", "fullstack", "tanstack-start");
+const TEST_SESSION_PASSWORD = "fullstack-demo-session-password-2026";
 const ARTIFACT_ROOT = path.join(
 	import.meta.dir,
 	"..",
@@ -120,7 +121,10 @@ beforeAll(async () => {
 	requireArtifact();
 	workDirectory = mkdtempSync(path.join(tmpdir(), "tanstack-artifact-"));
 	const app = new App({ outdir: path.join(workDirectory, "cdk.out") });
-	const stack = new TanStackStartExampleStack(app, "TanStackStartExample", { artifactDirectory: ARTIFACT_ROOT });
+	const stack = new TanStackStartExampleStack(app, "TanStackStartExample", {
+		artifactDirectory: ARTIFACT_ROOT,
+		sessionPassword: TEST_SESSION_PASSWORD,
+	});
 	stackTemplate = Template.fromStack(stack);
 	zipPath = findZip(app.synth().directory, "index.js");
 	if (zipPath === "") throw new Error("no revision ZIP containing index.js was synthesized");
@@ -132,6 +136,7 @@ beforeAll(async () => {
 		cwd: extractedRoot,
 		host: "127.0.0.1",
 		port: 0,
+		env: { SESSION_PASSWORD: TEST_SESSION_PASSWORD, NODE_ENV: "production" },
 		startupTimeoutMs: 60_000,
 	});
 }, 300_000);
@@ -279,6 +284,31 @@ describe("running the extracted TanStack Start artifact", () => {
 		expect(asset.status).toBe(200);
 		expect(new TextDecoder().decode(asset.body)).toContain("User-agent");
 	});
+});
+
+test("stack wires the session secret and production cookie mode", () => {
+	const app = new App();
+	const stack = new TanStackStartExampleStack(app, "SessionEnvStack", {
+		artifactDirectory: ARTIFACT_ROOT,
+		sessionPassword: TEST_SESSION_PASSWORD,
+	});
+	Template.fromStack(stack).hasResourceProperties("AWS::Lambda::WebFunctionRevision", {
+		ServiceConfig: {
+			EnvironmentVariables: {
+				SESSION_PASSWORD: TEST_SESSION_PASSWORD,
+				NODE_ENV: "production",
+			},
+		},
+	});
+});
+
+test("stack rejects a short session password", () => {
+	const app = new App();
+	expect(() =>
+		new TanStackStartExampleStack(app, "ShortSecretStack", {
+			artifactDirectory: ARTIFACT_ROOT,
+			sessionPassword: "too-short",
+		})).toThrow(/at least 32 characters/);
 });
 
 interface DistributionConfigShape {

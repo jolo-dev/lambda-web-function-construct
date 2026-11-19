@@ -1,5 +1,6 @@
 import path from "node:path";
 import { App } from "aws-cdk-lib";
+import { readSessionPassword, SESSION_PASSWORD_ENV } from "./shared/session-secret";
 import { NextjsExampleStack } from "./nextjs/stack";
 import { NuxtExampleStack } from "./nuxt/stack";
 import { TanStackStartExampleStack } from "./tanstack-start/stack";
@@ -19,6 +20,10 @@ const env = {
 
 new NextjsExampleStack(app, "FullstackNextjs", { artifactDirectory: artifact("nextjs"), env });
 new NuxtExampleStack(app, "FullstackNuxt", { artifactDirectory: artifact("nuxt"), env });
-new TanStackStartExampleStack(app, "FullstackTanStackStart", { artifactDirectory: artifact("tanstack-start"), env });
+new TanStackStartExampleStack(app, "FullstackTanStackStart", {
+  artifactDirectory: artifact("tanstack-start"),
+  sessionPassword: readSessionPassword(process.env[SESSION_PASSWORD_ENV]),
+  env,
+});
 
 app.synth();
