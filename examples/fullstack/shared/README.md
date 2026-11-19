@@ -8,6 +8,7 @@ Support code for the Next.js, Nuxt, and TanStack Start Web Function examples. It
 - `build-arm64.sh`: reproducible Linux Arm64 build in a pinned Node.js 24 container (requires running Docker).
 - `build-arm64-artifacts.sh`: builds all three examples for Linux Arm64, installing pinned Bun 1.4.4 and frozen dependencies inside the container, then running each framework's `build-artifact.mjs`.
 - `build-native.sh`: host build for rapid iteration. Output is development evidence only, not deployment evidence.
+- `session-secret.ts`: shared synthesis-time gate for the fullstack examples' session secret. `readSessionPassword` requires `FULLSTACK_SESSION_PASSWORD` (or the stack prop) to be at least 32 characters; the shared `cdk-app.ts` deploy entry reads it, so a missing or short value fails synthesis of all three example stacks.
 - `aws-checklist.md`: gated live-AWS deployment/cleanup checklist with results for the bounded Next.js, TanStack Start, and Nuxt probes.
 - `live-resources.md`: retired Nuxt deployment record — identifiers, live probe results, and verified cleanup (operator asked to delete it after testing).
 
@@ -54,9 +55,9 @@ bash examples/fullstack/shared/build-arm64-artifacts.sh
 | Probe unit tests (`bun test test/fullstack-probe.test.ts`) | Passed locally (13 tests). |
 | Next.js example tests (`bun test test/fullstack-nextjs.test.ts`) | Passed locally against native artifact (12 tests): SSR, server action validation, RSC/navigation payload, hashed static asset, public file, stack routing. |
 | Nuxt example tests (`bun test test/fullstack-nuxt.test.ts`) | Passed locally against native artifact (13 tests): SSR, Nitro server mutation validation, navigation, hashed `/_nuxt` asset, mutable public file, stack routing. |
-| TanStack Start example tests (`bun test test/fullstack-tanstack-start.test.ts`) | Passed locally against native artifact (14 tests): SSR, server route mutation validation, navigation, hashed `/assets` asset, mutable public file, stack routing. |
+| TanStack Start example tests (`bun test test/fullstack-tanstack-start.test.ts`) | Passed locally against native artifact (19 tests): SSR, server route mutation validation, navigation, hashed `/assets` asset, mutable public file, stack routing, stateless basic-auth (login page, credential reject/accept, protected `/profile`, logout with stateless-replay caveat), and session-secret/production-cookie stack wiring. |
 | Repo build/types | `bun run build` (JSII), `bun run test:types`, `bun run test:types:cognito` passed locally. |
-| Full test suite (`bun test`) | **207 pass / 0 fail** (20 files). The previously timing-out `test/web-function.test.ts` benchmark synthesis test now has a 30s timeout. |
+| Full test suite (`bun test`) | **212 pass / 0 fail** (20 files): the 207-test Task 10 baseline plus 2 session-secret tests and 3 auth behavior tests for the TanStack Start example. The previously timing-out `test/web-function.test.ts` benchmark synthesis test now has a 30s timeout. |
 | Linux Arm64 container build and platform check | **PASSED locally.** All three artifacts built in a pinned `linux/arm64` Node 24.22.1 container, with native modules reported as ELF ARM aarch64 (`sharp`, `rolldown`, `lightningcss`). Artifact trees: Next 39 MB, Nuxt 3.3 MB, TanStack Start 138 MB unpacked; synthesized revision ZIPs: 12 MB / 3.3 MB / 32 MB, all under the 512 MB uncompressed limit. |
 | Linux Arm64 container runtime smoke | **PASSED locally.** Each Linux Arm64 artifact started in the arm64 container on a mapped non-default host port; probe identity, SSR HTML, and native mutation (`/api/square` for Nuxt/TanStack) succeeded. |
 | Browser hydration/click navigation | **NOT RUN.** No browser runner in the project; HTML probes cannot prove hydration. |
