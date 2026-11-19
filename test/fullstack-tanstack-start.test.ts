@@ -260,6 +260,13 @@ describe("running the extracted TanStack Start artifact", () => {
 		expect(timestamp).toBeLessThanOrEqual(Date.now() + 1_000);
 	});
 
+	test("renders the Aurora split hero copy", async () => {
+		const html = new TextDecoder().decode((await getBounded(baseUrl(), "/")).body);
+		expect(html).toContain("The whole stack, running live.");
+		expect(html).toContain("CloudFront");
+		expect(html).toContain("Web Function");
+	});
+
 	test("a native server route mutation validates input and returns a computed result", async () => {
 		const valid = await postJson(baseUrl(), "/api/square", { value: "12" }, { timeoutMs: 10_000 });
 		expect(valid.status).toBe(200);
