@@ -34,7 +34,7 @@ Client styling is built with **Tailwind CSS 4** through the `@tailwindcss/vite` 
 - Controls: `aurora-button` (indigo-to-cyan gradient), `aurora-input`, `aurora-link`.
 - Text: `aurora-label` (uppercase kicker), `aurora-ok`, `aurora-warn`.
 
-The `@layer base` block sets the dark `color-scheme`, fixed aurora background, cyan selection/caret, and thin scrollbars, and a `prefers-reduced-motion` block neutralizes transitions, animations, iteration counts, and scrolling. Tailwind emits the stylesheet as a content-hashed `dist/client/assets/app-*.css` referenced from the SSR document head, so it rides the immutable `/assets/*` CloudFront/S3 path like the JS bundles. The palette is a deliberate, named design choice; `app.css` carries a scoped `impeccable-disable` comment on the button gradient for the UI anti-pattern detector.
+The `@layer base` block sets the dark `color-scheme`, fixed aurora background, cyan selection/caret, and thin scrollbars, and a `prefers-reduced-motion` block neutralizes transitions, animations, iteration counts, and scrolling. Tailwind emits the stylesheet as a content-hashed `dist/client/assets/app-*.css` referenced from the SSR document head, so it rides the immutable `/assets/*` CloudFront/S3 path like the JS bundles. The palette is a deliberate, named design choice; `app.css` carries a scoped `impeccable-disable` comment on the button gradient for the UI anti-pattern detector, and the detector re-run passed with that single scoped suppression the only outstanding finding.
 
 ## Demo basic-auth session (stateless)
 

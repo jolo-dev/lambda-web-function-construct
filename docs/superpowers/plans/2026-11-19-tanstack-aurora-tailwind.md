@@ -312,3 +312,62 @@ Through CloudFront: home 200 with Aurora copy + stylesheet link; hashed CSS asse
 - [ ] **Step 4: Record and commit**
 
 Update this plan with a Task 5 execution record and update `examples/fullstack/shared/live-resources.md` with the current URL/distribution/endpoint and the fact that the stack is retained. Commit docs only with `git commit -m "Record Aurora live update"`. No cleanup command should be run.
+
+---
+
+## Task 4 execution record (2026-11-19)
+
+Task 4 (verification, Impeccable detector, artifact rebuild, docs) was completed in commits through `409ebe0` ("Document Aurora Glass TanStack restyle"), with these polish deviations from the plan text above, recorded here so plan and code do not drift:
+
+- `aurora-label` uses `text-xs` (the plan spec said `text-[0.7rem]`).
+- `aurora-input` uses `text-base` (the plan spec said `text-sm`).
+- The `::selection`, `input, textarea` caret-color, and `*` scrollbar rules were moved inside `@layer base` (the plan draft placed them after `@layer components`).
+- The `prefers-reduced-motion` block additionally sets `animation-iteration-count: 1 !important` and `scroll-behavior: auto !important`.
+- The home nav gained `aria-label="Primary"` and `flex-wrap` on the nav row.
+- The `login-error` and `square-error` messages render with `role="alert"`.
+- The detector's `ai-color-palette` finding on the button gradient was suppressed with a scoped `impeccable-disable-next-line` comment at `src/styles/app.css:40` (supervisor-approved: the Aurora Glass indigo/cyan palette is the deliberate design choice). The detector re-run was clean with that single scoped suppression the only outstanding finding.
+
+---
+
+## Task 5 execution record (2026-11-19) — stack RETAINED, no cleanup
+
+**Preflight:** `aws sts get-caller-identity` confirmed profile `jolo` / account `246350246460`; `aws cloudformation describe-stacks` confirmed `FullstackTanStackStart` as `CREATE_COMPLETE` (intentionally retained). A fresh ≥32-char `FULLSTACK_SESSION_PASSWORD` was generated in the shell only (`openssl rand -hex 32`); it was never written to a file or committed. Rotating the secret invalidates old sessions — accepted.
+
+**Deploy (in place, no destroy):**
+
+```sh
+FULLSTACK_SESSION_PASSWORD='<fresh shell-only value>' \
+AWS_PROFILE=jolo AWS_REGION=eu-central-1 \
+CDK_DEFAULT_ACCOUNT=246350246460 CDK_DEFAULT_REGION=eu-central-1 \
+bunx cdk deploy FullstackTanStackStart \
+  --app 'bun run examples/fullstack/cdk-app.ts' --require-approval never
+```
+
+Result: ✅ success, deployment time 42.24 s (total 70.45 s), CloudFormation changeset applied in place to the retained stack.
+
+| Item | Value |
+| --- | --- |
+| CloudFront HTTPS URL (open this) | `https://d29nqdx0jywl18.cloudfront.net` |
+| CloudFront distribution ID | `E1IRHI8IPI9MV7` (`Deployed`, enabled) |
+| Web Function endpoint | `https://t3lhsldkbxxhkqcs.h73.lambda-web.eu-central-1.on.aws` |
+| Web Function ARN | `arn:aws:lambda:eu-central-1:246350246460:web-function/fullstack-tanstack-start` |
+| Stack ARN | `arn:aws:cloudformation:eu-central-1:246350246460:stack/FullstackTanStackStart/d2982690-e3f7-11f1-8a37-02ffd081c76d` |
+
+**Bounded live verification (~25 HTTP requests total; all checks passed on first attempt, no propagation retries needed):**
+
+- `GET /` → 200 with the Aurora copy ("The whole stack, running live.", "CloudFront", "Web Function") and `<link rel="stylesheet" href="/assets/app-CunnxGMM.css">` in the document head.
+- `GET /assets/app-CunnxGMM.css` → 200, `content-type: text/css`, `cache-control: public, max-age=31536000, immutable`, ETag present.
+- `GET /login` → 200 with "Welcome back" and "DEMO SESSION".
+- `POST /api/login` bad credentials → 401 `{"error":true,"message":"Invalid email or password"}`, **no Set-Cookie**.
+- `POST /api/login` demo credentials → 200 with `Set-Cookie: app-session=…; Max-Age=604740; Path=/; HttpOnly; Secure; SameSite=Lax`.
+- `GET /api/session` with cookie → 200 `{"email":"demo@example.com"}`.
+- `GET /profile` with cookie → 200, "Protected profile" + `demo@example.com`.
+- `POST /api/logout` → 200, `Set-Cookie: app-session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax` (clears the browser cookie; the copied cookie still resolves afterwards — the documented stateless logout caveat).
+- `POST /api/square {"value":7}` → 200 `{"result":"49"}`; invalid string and missing value → 400 `{"error":"Value must be a number from 0 to 1000"}`.
+- `GET /about` → 200 with the `<h1>About this example</h1>` heading.
+- `GET /__probe/identity` → 404.
+- Direct unsigned `GET https://t3lhsldkbxxhkqcs.h73.lambda-web.eu-central-1.on.aws/` → 403.
+
+**Rendered-page inspection (headless Chromium, 1440×900 desktop):** hydration markers present in the DOM dump; computed styles show the Aurora background gradient, `#e0e7ff` body text, system sans font, `.aurora-card` glass with `backdrop-filter: blur(24px)` and indigo border, gradient `.aurora-button`, translucent `.aurora-input`; stylesheet loaded; no horizontal overflow on `/` or `/login`. No visual defects found; no styling fixes were needed.
+
+**The stack is RETAINED — no cleanup command was run.** Do not destroy `FullstackTanStackStart` until the operator asks. Current values live in `examples/fullstack/shared/live-resources.md`.

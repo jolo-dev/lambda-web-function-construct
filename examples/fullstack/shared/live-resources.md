@@ -2,7 +2,9 @@
 
 ## FullstackTanStackStart — RETAINED (operator wants to view the page)
 
-**Do not destroy this stack until the operator asks.** Redeployed on 2026-11-19 after the earlier bounded rollout was cleaned up prematurely. This deployment is intentionally left running.
+**Do not destroy this stack until the operator asks.** Redeployed on 2026-11-19 after the earlier bounded rollout was cleaned up prematurely, and updated **in place** on 2026-11-19 with the Aurora Glass Tailwind restyle (new revision + hashed `app-CunnxGMM.css` stylesheet) without any teardown. This deployment is intentionally left running.
+
+Styling status: **Aurora Glass (Tailwind CSS 4) live.** The home page renders the split hero + `DEPLOYED PROOF` card, `/login` renders the centered `DEMO SESSION` glass card, and the stylesheet is served immutably from `/assets/*` (verified: `cache-control: public, max-age=31536000, immutable`).
 
 | Item | Value |
 | --- | --- |
@@ -15,9 +17,9 @@
 | Code bucket | `fullstacktanstackstart-appappwebfunctioncodebucket-ttzbykk1wktl` |
 | Delivery asset bucket | `fullstacktanstackstart-deliveryassetbucket87363ba9-gxbcmmdoaotl` |
 
-Public demo login (from the upstream starter): **`demo@example.com` / `demo-password`**. `/login` shows both values. Protected page: `/profile`. The session cookie is `app-session` (HttpOnly, Secure, SameSite=Lax, 7-day TTL). The session secret was generated in the shell for the deploy and is intentionally **not** recorded here.
+Public demo login (from the upstream starter): **`demo@example.com` / `demo-password`**. `/login` shows both values. Protected page: `/profile`. The session cookie is `app-session` (HttpOnly, Secure, SameSite=Lax, 7-day TTL). The session secret was regenerated in the shell for the in-place update and is intentionally **not** recorded here; the rotation invalidates old sessions (accepted).
 
-Verified after this redeploy: `/` 200 with request-time SSR timestamp; `/login` 200 with credentials; invalid login 401 with no Set-Cookie; valid login 200 with `app-session` cookie; `/api/session` returns `{"email":"demo@example.com"}`; authenticated `/profile` shows the email; unauthenticated `/profile` renders the login UI (currently HTTP 500 via the route error boundary — known demo limitation); unsigned direct endpoint 403.
+Verified after the in-place Aurora update (2026-11-19): `/` 200 with Aurora copy ("The whole stack, running live.") and the `/assets/app-CunnxGMM.css` stylesheet link; hashed CSS 200 with immutable cache headers; `/login` 200 with "Welcome back" / `DEMO SESSION`; invalid login 401 with no Set-Cookie; valid login 200 with `app-session` Secure/HttpOnly/SameSite=Lax; `/api/session` returns `{"email":"demo@example.com"}` with the cookie; authenticated `/profile` shows `demo@example.com`; `/api/logout` clears the browser cookie (a cookie copied before logout remains valid — documented stateless caveat); `/api/square` returns `{"result":"49"}` for 7 and 400 with the validation message for bad input; `/about` 200 with its heading; `/__probe/identity` 404; unauthenticated `/profile` renders the login UI (currently HTTP 500 via the route error boundary — known demo limitation); unsigned direct endpoint 403. Headless Chromium inspection at 1440×900 confirmed the rendered Aurora styling (glass cards with `backdrop-blur`, gradient button, aurora background) with no layout overflow. Full probe log: `docs/superpowers/plans/2026-11-19-tanstack-aurora-tailwind.md`, Task 5 execution record.
 
 CDK bootstrap asset objects from this retained deployment (leave in place while the stack exists):
 
