@@ -8,6 +8,7 @@ import {
 import { createServerFn } from "@tanstack/react-start";
 import type { ReactNode } from "react";
 import { getAppSession } from "../utils/session";
+import appCss from "../styles/app.css?url";
 
 const fetchUser = createServerFn({ method: "GET" }).handler(async () => {
   const session = await getAppSession();
@@ -21,6 +22,7 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "TanStack Start on Lambda Web Function" },
     ],
+    links: [{ rel: "stylesheet", href: appCss }],
   }),
   beforeLoad: async () => ({ user: await fetchUser() }),
   component: RootComponent,

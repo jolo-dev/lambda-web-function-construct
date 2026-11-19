@@ -174,6 +174,15 @@ describe("staged TanStack Start artifact", () => {
 		expect(assetFiles.length, "hashed client assets under /assets").toBeGreaterThan(0);
 	});
 
+	test("stages a hashed Tailwind stylesheet linked from the SSR document head", async () => {
+		requireArtifact();
+		const css = listFiles(path.join(ARTIFACT_ROOT, "dist", "client", "assets"), ".css");
+		expect(css.length).toBeGreaterThan(0);
+		const html = new TextDecoder().decode((await getBounded(baseUrl(), "/")).body);
+		expect(html).toMatch(/rel="stylesheet"/);
+		expect(html).toMatch(/href="\/assets\/[^"]+\.css"/);
+	});
+
 	test("keeps mutable/unhashed public files in the client output", () => {
 		requireArtifact();
 		expect(existsSync(path.join(ARTIFACT_ROOT, "dist", "client", "robots.txt"))).toBe(true);
