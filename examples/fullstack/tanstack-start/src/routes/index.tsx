@@ -48,6 +48,10 @@ function Home() {
       <p id="ssr-time">Rendered on the server at {renderedAt}</p>
       <p>
         <Link id="about-link" to="/about">About</Link>
+        {" | "}
+        <Link to="/login">Sign in</Link>
+        {" | "}
+        <Link to="/profile">Profile</Link>
       </p>
       <section>
         <h2>Client counter</h2>

@@ -286,6 +286,83 @@ describe("running the extracted TanStack Start artifact", () => {
 	});
 });
 
+async function authPost(path: string, body: unknown, cookie?: string) {
+  return fetch(new URL(path, baseUrl()), {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+    redirect: "manual",
+    signal: AbortSignal.timeout(10_000),
+  });
+}
+
+async function getWithCookie(path: string, cookie?: string) {
+  const response = await fetch(new URL(path, baseUrl()), {
+    headers: cookie ? { cookie } : {},
+    redirect: "manual",
+    signal: AbortSignal.timeout(10_000),
+  });
+  return { status: response.status, html: await response.text() };
+}
+
+test("login page is reachable and shows the demo credentials", async () => {
+  const page = await getWithCookie("/login");
+  expect(page.status).toBe(200);
+  expect(page.html).toContain("Sign in");
+  expect(page.html).toContain("demo@example.com");
+  expect(page.html).toContain("demo-password");
+});
+
+test("login rejects bad credentials and accepts the demo user", async () => {
+  const bad = await authPost("/api/login", { email: "demo@example.com", password: "wrong" });
+  expect(bad.status).toBe(401);
+  expect(await bad.json()).toMatchObject({ error: true });
+  expect(bad.headers.get("set-cookie")).toBeNull();
+
+  const good = await authPost("/api/login", {
+    email: "demo@example.com",
+    password: "demo-password",
+  });
+  expect(good.status).toBe(200);
+  const setCookie = good.headers.get("set-cookie") ?? "";
+  expect(setCookie).toContain("app-session=");
+  expect(setCookie).toContain("HttpOnly");
+  expect(setCookie).toContain("Secure");
+  expect(setCookie).toContain("SameSite=Lax");
+});
+
+test("profile is protected and logout clears the browser cookie (stateless replay remains valid)", async () => {
+  const anonymous = await getWithCookie("/profile");
+  expect(anonymous.html).toContain("Sign in");
+
+  const login = await authPost("/api/login", {
+    email: "demo@example.com",
+    password: "demo-password",
+  });
+  const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  const session = await fetch(new URL("/api/session", baseUrl()), { headers: { cookie } });
+  expect(await session.json()).toEqual({ email: "demo@example.com" });
+
+  const authed = await getWithCookie("/profile", cookie);
+  expect(authed.html).toContain("demo@example.com");
+
+  const logout = await fetch(new URL("/api/logout", baseUrl()), {
+    method: "POST",
+    headers: { cookie },
+    redirect: "manual",
+  });
+  expect(logout.status).toBe(200);
+  const logoutCookie = logout.headers.get("set-cookie") ?? "";
+  expect(logoutCookie).toContain("app-session=");
+  const cleared = logoutCookie.split(";")[0] ?? "";
+  const afterLogout = await getWithCookie("/profile", cleared);
+  expect(afterLogout.html).toContain("Sign in");
+
+  // iron-session is stateless: destroy() clears the browser cookie but cannot revoke an old copy.
+  const replay = await getWithCookie("/profile", cookie);
+  expect(replay.html).toContain("demo@example.com");
+});
+
 test("stack wires the session secret and production cookie mode", () => {
 	const app = new App();
 	const stack = new TanStackStartExampleStack(app, "SessionEnvStack", {

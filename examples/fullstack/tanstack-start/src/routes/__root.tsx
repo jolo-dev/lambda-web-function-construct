@@ -5,7 +5,14 @@ import {
   Scripts,
   createRootRoute,
 } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import type { ReactNode } from "react";
+import { getAppSession } from "../utils/session";
+
+const fetchUser = createServerFn({ method: "GET" }).handler(async () => {
+  const session = await getAppSession();
+  return session.userEmail ? { email: session.userEmail } : null;
+});
 
 export const Route = createRootRoute({
   head: () => ({
@@ -15,6 +22,7 @@ export const Route = createRootRoute({
       { title: "TanStack Start on Lambda Web Function" },
     ],
   }),
+  beforeLoad: async () => ({ user: await fetchUser() }),
   component: RootComponent,
 });
 
