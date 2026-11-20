@@ -50,7 +50,8 @@ function rebaseOutputSymlinks(stagedOutput, sourceOutput) {
   const stagedReal = realpathSync(stagedOutput);
   const sourceReal = realpathSync(sourceOutput);
   let rebased = 0;
-  walk(stagedOutput, (filePath) => {
+  // Use the canonical root for both sides of path.relative, including through checkout aliases.
+  walk(stagedReal, (filePath) => {
     let stat;
     try {
       stat = lstatSync(filePath);
@@ -131,7 +132,7 @@ function breakNitroCycles(nitroDir) {
   if (!existsSync(nitroDir)) return;
   const nitroReal = realpathSync(nitroDir);
   const edges = new Map(); // "src\0dst" -> [symlinkPath]
-  collectNitroEdges(nitroDir, nitroReal, edges);
+  collectNitroEdges(nitroReal, nitroReal, edges);
   let broken = 0;
   const seen = new Set();
   for (const key of edges.keys()) {

@@ -38,6 +38,9 @@ jobs:
       - name: Build JSII assembly
         run: bun run build
 
+      - name: Build native framework test artifacts
+        run: bash examples/fullstack/shared/build-native-artifacts.sh
+
       - name: Test
         run: bun test
 

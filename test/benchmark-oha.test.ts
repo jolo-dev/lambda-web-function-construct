@@ -51,7 +51,7 @@ test("repeat summaries weight throughput by actual duration and label run-level 
 	expect(result.p50Ms).toBe(60);
 });
 
-test("installed oha JSON is parsed correctly against real mixed HTTP responses", async () => {
+test.skipIf(!Bun.which("oha"))("installed oha JSON is parsed correctly against real mixed HTTP responses", async () => {
 	let count = 0;
 	const server = Bun.serve({ port: 0, fetch() { return new Response("ok", { status: count++ % 2 ? 429 : 200 }); } });
 	try {
@@ -67,7 +67,7 @@ test("installed oha JSON is parsed correctly against real mixed HTTP responses",
 		expect(result.httpFailures).toBe(10);
 		expect(result.failureRate).toBe(0.5);
 	} finally { server.stop(true); }
-}, { skip: !Bun.which("oha"), timeout: 10000 });
+}, 10_000);
 
 test("oha uses HTTP/1.1, bounded timeouts, status breakdowns and drains ongoing requests", () => {
 	const args = buildOhaArgs("https://example.com/io?delayMs=30", 64, 30);

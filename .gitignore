@@ -8,7 +8,7 @@ examples/fullstack/artifacts/
 dist
 lib
 .jsii
-tsconfig.json
+/tsconfig.json
 *.tgz
 cdk.out
 cdk.out.*

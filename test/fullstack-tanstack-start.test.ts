@@ -392,12 +392,8 @@ test("profile is protected and logout clears the browser cookie (stateless repla
 });
 
 test("stack wires the session secret and production cookie mode", () => {
-	const app = new App();
-	const stack = new TanStackStartExampleStack(app, "SessionEnvStack", {
-		artifactDirectory: ARTIFACT_ROOT,
-		sessionPassword: TEST_SESSION_PASSWORD,
-	});
-	Template.fromStack(stack).hasResourceProperties("AWS::Lambda::WebFunctionRevision", {
+	if (stackTemplate === undefined) throw new Error("TanStack Start stack has not been synthesized");
+	stackTemplate.hasResourceProperties("AWS::Lambda::WebFunctionRevision", {
 		ServiceConfig: {
 			EnvironmentVariables: {
 				SESSION_PASSWORD: TEST_SESSION_PASSWORD,

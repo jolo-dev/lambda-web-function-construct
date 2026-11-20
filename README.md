@@ -113,8 +113,11 @@ mise exec -- bun install --cwd examples --frozen-lockfile
 mise exec -- bun run build
 mise exec -- bun run test:types
 mise exec -- bun run test:types:cognito
+mise exec -- bash examples/fullstack/shared/build-native-artifacts.sh
 mise exec -- bun test
 ```
+
+The full suite uses host-native Astro, Next.js, Nuxt, and TanStack Start artifacts. The build script prepares all four using their lockfiles. The `oha` smoke test uses a local HTTP server and is skipped if `oha` is not on `PATH`; the fixture-based benchmark tests still run.
 
 With mise activated in your shell, you can also run the Bun commands directly. Consumers require Node.js 24 or later; the mise pins select reproducible development versions.
 
