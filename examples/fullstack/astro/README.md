@@ -34,7 +34,7 @@ bun run build:artifact                        # native host build, development e
 bun test test/fullstack-astro.test.ts         # from the repository root; needs the staged artifact
 ```
 
-`build:artifact` runs `build-native.sh`, which writes to `examples/fullstack/artifacts/astro/native-<platform>-<arch>` (git-ignored). The Linux Arm64 path is `bash examples/fullstack/shared/build-arm64-artifacts.sh`.
+`build:artifact` runs `build-native.sh`, which writes to `examples/fullstack/artifacts/astro/native-<platform>-<arch>` (git-ignored). For a Linux Arm64 artifact (Docker required): `bash examples/fullstack/shared/build-arm64.sh examples/fullstack/astro -- node build-artifact.mjs`. Note that the shared `build-arm64-artifacts.sh` loop covers only nextjs/nuxt/tanstack-start, not astro.
 
 ## Launcher contract
 
@@ -46,7 +46,7 @@ Unlike the TanStack launcher (which hosts the app's fetch handler through `srvx/
 
 `stack.ts` (`AstroExampleStack`) maps only `/_astro/*` (from `dist/client/_astro/`) to a private S3 origin and routes all other traffic, including mutable/unhashed public files, to the Web Function. Synthesis never runs the framework build.
 
-Note: `cdk-app.ts` wires `FullstackAstro` against the native `native-darwin-arm64` artifact; the shared `artifact()` helper resolves `linux-arm64`, which is not built in this change. A Linux Arm64 artifact must be staged with `build-arm64-artifacts.sh` before synthesizing a real deployment.
+Note: `cdk-app.ts` wires `FullstackAstro` against the native `native-darwin-arm64` artifact; the shared `artifact()` helper resolves `linux-arm64`, which is not built in this change. A Linux Arm64 artifact must be staged with `bash examples/fullstack/shared/build-arm64.sh examples/fullstack/astro -- node build-artifact.mjs` before synthesizing a real deployment.
 
 ## Limits
 

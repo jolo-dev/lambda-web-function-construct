@@ -9,7 +9,8 @@ import { TanStackStartExampleStack } from "./tanstack-start/stack";
 /**
  * Deployment entry for the four fullstack examples (the astro example needs a staged
  * linux-arm64 artifact first; see the FullstackAstro note below). Artifacts must be built
- * first with `bash examples/fullstack/shared/build-arm64-artifacts.sh`; synthesis never runs a framework build.
+ * first (build-native.sh per example, or build-arm64.sh for a container arm64 build); synthesis
+ * never runs a framework build.
  * Region/account come from CDK_DEFAULT_* (set by the CLI from the selected profile/region).
  */
 const app = new App();
@@ -22,8 +23,9 @@ const env = {
 
 new NextjsExampleStack(app, "FullstackNextjs", { artifactDirectory: artifact("nextjs"), env });
 // The astro artifact is currently native-darwin-arm64 only: the shared artifact() helper
-// resolves linux-arm64, which is not built in this change. Stage one with the shared
-// build-arm64-artifacts.sh before synthesizing a real FullstackAstro deployment.
+// resolves linux-arm64, which is not built in this change. Stage one with
+// `bash examples/fullstack/shared/build-arm64.sh examples/fullstack/astro -- node build-artifact.mjs`
+// before synthesizing a real FullstackAstro deployment.
 new AstroExampleStack(app, "FullstackAstro", {
   artifactDirectory: path.join(root, "examples", "fullstack", "artifacts", "astro", "native-darwin-arm64"),
   env,
