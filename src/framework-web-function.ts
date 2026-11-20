@@ -35,7 +35,8 @@ export interface WebFunctionPermissions {
  * internal `WebFunctionDelivery` hard-requires a same-stack IamAuth HomeRegion
  * Web Function, so auth/endpoint knobs would only ever fail inside the delivery,
  * and Cognito requires ApplicationManaged. Consumers who need other combinations
- * compose `WebFunction` and `WebFunctionDelivery` directly.
+ * compose the underlying `WebFunction` (with `WebFunctionDelivery` where its
+ * IamAuth/HomeRegion requirement fits) directly.
  */
 export interface FrameworkWebFunctionProps {
 	/** Prebuilt artifact root staged by the framework's build-artifact script. */
