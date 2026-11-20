@@ -90,7 +90,7 @@ const site = new TanStackWebFunction(this, "Site", {
   functionName: "my-site",
   permissions: {
     dynamodb: [table], // grantReadWriteData: Get/Put/Update/Delete/ConditionCheck item, Query, Scan, Batch*, stream reads, DescribeTable
-    s3: [bucket],      // grantReadWrite: s3:GetObject*, s3:PutObject*, s3:Abort*, s3:DeleteObject*; GetBucket*/List* on the bucket
+    s3: [bucket],      // grantReadWrite: s3:GetObject*, s3:PutObject (plus Tagging/Retention/LegalHold variants; no PutObjectAcl), s3:Abort*, s3:DeleteObject*; GetBucket*/List* on the bucket
     sqs: [queue],      // grantSendMessages: sqs:SendMessage
   },
 });

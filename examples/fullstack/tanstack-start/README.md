@@ -48,7 +48,7 @@ This example adds a stateless basic-auth flow to demonstrate a session-gated rou
 
 ### Session secret at synthesis
 
-`stack.ts` passes `SESSION_PASSWORD` (≥32 characters) to the Web Function. Synthesis reads it from the `FULLSTACK_SESSION_PASSWORD` environment variable via `shared/session-secret.ts` in the shared `examples/fullstack/cdk-app.ts` deploy entry. Because all three example stacks (Next.js, Nuxt, TanStack Start) are synthesized by that one entry, a missing or too-short `FULLSTACK_SESSION_PASSWORD` fails the entire synthesis — no example stack can be synthesized without it.
+`stack.ts` passes `SESSION_PASSWORD` (≥32 characters) to the Web Function. Synthesis reads it from the `FULLSTACK_SESSION_PASSWORD` environment variable via `shared/session-secret.ts` in the shared `examples/fullstack/cdk-app.ts` deploy entry. Because all four example stacks (Next.js, Nuxt, TanStack Start, Astro) are synthesized by that one entry, a missing or too-short `FULLSTACK_SESSION_PASSWORD` fails the entire synthesis — no example stack can be synthesized without it.
 
 ```sh
 FULLSTACK_SESSION_PASSWORD="<at least 32 characters>" <cdk synth/deploy command>
