@@ -89,7 +89,7 @@ export interface WebFunctionPermissions {
   readonly dynamodb?: ITable[];
   /** S3 buckets granted read/write object access. */
   readonly s3?: IBucket[];
-  /** SQS queues granted send/receive/delete message access. */
+  /** SQS queues granted message-send access (send + batch send only). */
   readonly sqs?: IQueue[];
 }
 
@@ -268,7 +268,7 @@ CloudFormation output; the TanStack stack additionally keeps its public
 | Q2 | Permissions API | Both: public `executionRole`/`grantPrincipal` core + typed `permissions` conveniences for DynamoDB/S3/SQS |
 | Q3 | Astro | Build the minimal `examples/fullstack/astro` example; no convention-only construct |
 | Q4 | Astro modes | SSR only (`@astrojs/node`); no static-only mode in v1 |
-| Q5 | Encapsulation | Constructs compose `WebFunction` + `WebFunctionDelivery` internally, expose both as readonly properties, full pass-through props; `authType`/`endpointType`/`cognito` are not props because the mandatory delivery requires IAM_AUTH + HOME_REGION (review finding) |
+| Q5 | Encapsulation | Constructs compose `WebFunction` + `WebFunctionDelivery` internally, expose both as readonly properties, curated pass-through props; `authType`/`endpointType`/`cognito` are not props because the mandatory delivery requires IAM_AUTH + HOME_REGION (review finding) |
 | Q6 | Naming | `TanStackWebFunction` (official framework casing) |
 | Q7 | Dogfooding | Refactor the three existing example stacks onto the constructs |
 | Q8 | Env conventions | No session special-casing; `NODE_ENV=production` set by the construct; plain `environmentVariables` passthrough |
