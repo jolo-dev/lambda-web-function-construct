@@ -1,0 +1,22 @@
+---
+import "../styles/global.css";
+
+const timestamp = new Date().toISOString();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Astro SSR on a Lambda Web Function</title>
+  </head>
+  <body>
+    <main>
+      <h1>Astro SSR on a Lambda Web Function</h1>
+      <p id="ssr-time">Rendered on the server at {timestamp}</p>
+      <nav>
+        <a href="/about">About this example</a>
+      </nav>
+    </main>
+  </body>
+</html>

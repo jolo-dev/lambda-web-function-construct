@@ -1,0 +1,7 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src", "index.js", "build-artifact.mjs", "stack.ts", "astro.config.mjs"]
+}
