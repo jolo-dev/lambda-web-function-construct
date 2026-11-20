@@ -1,12 +1,8 @@
 # Lambda Web Function Construct
 
-AWS CDK constructs for deploying Node.js Lambda Web Functions with a private code bucket, immutable revision, and HTTPS endpoint. For Next.js, Astro, Nuxt, or TanStack Start, see [Framework Web Function constructs](#framework-web-function-constructs).
+AWS CDK constructs for deploying Node.js Lambda Web Functions with a private code bucket, immutable revision, and HTTPS endpoint — plus framework wrappers for [Next.js, Astro, Nuxt, and TanStack Start](#framework-web-function-constructs) and optional [Cognito authentication](#optional-cognito-authentication).
 
-## Prerequisites
-
-- Node.js 24 or later
-- AWS CDK v2
-- Bun on the machine running CDK synthesis when using `WebFunction` with `entry`, which bundles the entry file with `bun build`. Prebuilt framework artifacts are not bundled at synthesis.
+Runnable servers, fullstack apps, and benchmarks live under [`examples/`](examples/README.md).
 
 ## Install
 
@@ -40,79 +36,52 @@ new WebFunction(stack, "WebFunction", {
 app.synth();
 ```
 
-`WebFunctionAuthType` and `WebFunctionEndpointType` are typed classes with named constants, not TypeScript enums. They provide editor autocompletion and compile-time type checking while remaining JSII-compatible. Zod validates the underlying values and the supplied option instances during construct creation; plain strings are not accepted.
+The entry point is bundled with Bun for Node.js and deployed as a Node.js 24 revision. The construct creates the private S3 code bucket, grants the Lambda service read access to the versioned ZIP, grants the revision execution role scoped CloudWatch Logs permissions, and routes the endpoint to the generated revision.
 
-The entry point is bundled with Bun for Node.js and deployed as a Node.js 24 Lambda Web Function revision. The construct creates the private S3 code bucket, grants the Lambda service read access to the versioned ZIP, grants the revision execution role scoped CloudWatch Logs permissions for its centralized and `.local` log groups, and routes the endpoint to the generated revision.
+`WebFunctionAuthType` and `WebFunctionEndpointType` are typed classes with named constants, not TypeScript enums — editor autocompletion and compile-time checking while remaining JSII-compatible. Zod validates values during construct creation; plain strings are not accepted.
+
+Prerequisites: Node.js 24 or later, AWS CDK v2, and Bun on the machine running CDK synthesis (the `entry` bundling). Prebuilt framework artifacts are not bundled at synthesis.
 
 ## Optional Cognito authentication
 
-For a separate browser frontend with signed-in users, pass the optional `cognito` parameter:
+Pass the optional `cognito` parameter for a separate browser frontend with signed-in users:
 
 ```ts
 const api = new WebFunction(stack, "AuthenticatedApi", {
   entry: "src/http.ts", // Must verify Cognito access tokens on protected routes.
   functionName: "authenticated-api",
-  endpointName: "prod",
   authType: WebFunctionAuthType.APPLICATION_MANAGED,
   endpointType: WebFunctionEndpointType.HOME_REGION,
   cognito: {
     domainPrefix: "my-unique-app-login",
     callbackUrls: ["https://app.example.com/auth/callback"],
-    logoutUrls: ["https://app.example.com/"],
+    logoutUrls: ["https://app.example.com/"], // defaults to callbackUrls
   },
 });
-
 // Available only when cognito is configured:
 // api.userPool, api.userPoolClient, api.userPoolDomain
 ```
 
-This creates a retained Cognito User Pool, a public app client **without a secret**, and a managed-login v2 domain with default branding. The client enables authorization code flow for frontend PKCE login, token revocation and refresh-token rotation. The pool disables public sign-up, requires authenticator-app TOTP MFA, and uses the Essentials feature plan. Access/ID tokens last 10 minutes; refresh tokens last 7 days. Review Cognito pricing and invite users before trying sign-in.
+What it creates: a retained Cognito User Pool, a public app client **without a secret**, and a managed-login v2 domain. Authorization code flow for frontend PKCE login, token revocation, and refresh-token rotation. The pool disables public sign-up, requires authenticator-app TOTP MFA, and uses the Essentials plan. Access/ID tokens last 10 minutes; refresh tokens 7 days. The construct injects `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` into the revision and outputs those IDs, the login domain, and the OIDC issuer; those environment-variable names are reserved while `cognito` is configured. Web redirect URLs must use HTTPS except for HTTP loopback development. User pools are retained on stack deletion; review them before deleting user data.
 
-The construct injects `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` into the revision and outputs those IDs, the login domain, and the OIDC issuer. These environment-variable names are reserved when `cognito` is configured. `logoutUrls` defaults to `callbackUrls`; web redirect URLs must use HTTPS except for HTTP loopback development. Existing constructs are unchanged when the option is omitted.
-
-**Provisioning Cognito does not automatically protect application routes.** The frontend sends `Authorization: Bearer <access_token>`; your application must verify it and enforce permissions. Cognito configuration requires `APPLICATION_MANAGED`, not `IAM_AUTH`. No Amplify, Better Auth, Identity Pool, or API Gateway is needed.
+**Provisioning Cognito does not protect application routes.** Your application must verify the `Authorization: Bearer <access_token>` and enforce permissions. Cognito requires `APPLICATION_MANAGED`, not `IAM_AUTH`.
 
 ![AWS-icon architecture: separate frontend, Amazon Cognito, and a Lambda Web Function that verifies access tokens](examples/cognito/diagrams/cognito-architecture.png)
 
-[Editable architecture diagram](examples/cognito/diagrams/cognito-architecture.excalidraw) · [Step-by-step OIDC flow](examples/cognito/OIDC_FLOW.md)
-
-See **[Cognito-protected backend examples](examples/cognito/README.md)** for runnable [Hono](examples/cognito/hono/app.ts), [Express](examples/cognito/express/app.ts), and [Node HTTP](examples/cognito/node-http/app.ts) implementations, deployment instructions, exact-origin CORS, PKCE frontend integration, and offline authentication tests. These are separate from the benchmark examples.
-
-User pools are retained on stack deletion or when removing the option; their stack-managed clients and domains are removed. Review retained pools explicitly before deleting user data.
+See **[Cognito-protected backend examples](examples/cognito/README.md)** for runnable Hono, Express, and Node HTTP implementations, deployment instructions, exact-origin CORS, PKCE frontend integration, and offline authentication tests. Also: [architecture diagram](examples/cognito/diagrams/cognito-architecture.excalidraw) · [step-by-step OIDC flow](examples/cognito/OIDC_FLOW.md).
 
 ## Framework Web Function constructs
 
-Available in **`lambda-web-function-construct` 0.2.0 and later**. Import the constructs from the package root, not from `src/`. The npm package ships compiled JavaScript and TypeScript declarations under `lib/` (for example, `lib/nextjs-web-function.js` and `lib/nextjs-web-function.d.ts`); the TypeScript source lives in this repository.
+Import from the package root (npm ships compiled JavaScript and declarations under `lib/`; the TypeScript source lives in this repository):
 
-| Framework | Construct source | Static directory inside the artifact | CloudFront path | Example |
+| Framework | Construct | Static directory inside the artifact | CloudFront path | Example |
 | --- | --- | --- | --- | --- |
-| Next.js standalone | [`NextJsWebFunction`](src/nextjs-web-function.ts) | `.next/static/` | `/_next/static/*` | [Build and stage Next.js](examples/fullstack/nextjs/README.md) |
-| Astro SSR (`@astrojs/node`) | [`AstroWebFunction`](src/astro-web-function.ts) | `dist/client/_astro/` | `/_astro/*` | [Build and stage Astro](examples/fullstack/astro/README.md) |
-| Nuxt (Nitro `node-server`) | [`NuxtWebFunction`](src/nuxt-web-function.ts) | `.output/public/_nuxt/` | `/_nuxt/*` | [Build and stage Nuxt](examples/fullstack/nuxt/README.md) |
-| TanStack Start | [`TanStackWebFunction`](src/tanstack-web-function.ts) | `dist/client/assets/` | `/assets/*` | [Build and stage TanStack Start](examples/fullstack/tanstack-start/README.md) |
+| Next.js standalone | [`NextJsWebFunction`](src/nextjs-web-function.ts) | `.next/static/` | `/_next/static/*` | [Next.js](examples/fullstack/nextjs/README.md) |
+| Astro SSR (`@astrojs/node`) | [`AstroWebFunction`](src/astro-web-function.ts) | `dist/client/_astro/` | `/_astro/*` | [Astro](examples/fullstack/astro/README.md) |
+| Nuxt (Nitro `node-server`) | [`NuxtWebFunction`](src/nuxt-web-function.ts) | `.output/public/_nuxt/` | `/_nuxt/*` | [Nuxt](examples/fullstack/nuxt/README.md) |
+| TanStack Start | [`TanStackWebFunction`](src/tanstack-web-function.ts) | `dist/client/assets/` | `/assets/*` | [TanStack Start](examples/fullstack/tanstack-start/README.md) |
 
-Stage your framework's production output first, including its runtime dependencies and a root `index.js` launcher that listens on `AWS_LAMBDA_HTTP_ENDPOINT`. Set `artifactDirectory` to the staged directory, not the framework project root. CDK synthesis does not run the framework build. The linked examples include launchers and `build:artifact` scripts.
-
-```ts
-import { AstroWebFunction, NextJsWebFunction } from "lambda-web-function-construct";
-
-// Inside your CDK stack, choose the construct for the artifact you built.
-const nextSite = new NextJsWebFunction(this, "NextSite", {
-  artifactDirectory: "./artifacts/nextjs",
-  functionName: "my-nextjs-site",
-});
-
-const astroSite = new AstroWebFunction(this, "AstroSite", {
-  artifactDirectory: "./artifacts/astro",
-  functionName: "my-astro-site",
-});
-```
-
-Each construct fronts the Web Function with CloudFront: content-hashed assets come from a private S3 bucket, and other requests go to an IAM-protected home-region Web Function. The constructs do not accept `authType`, `endpointType`, or `cognito`; use `WebFunction` directly when you need a different endpoint or auth mode. `endpointName` defaults to `"prod"`, `NODE_ENV` to `"production"`, and the static asset bucket's removal policy to `RemovalPolicy.RETAIN`.
-
-### Grant the application AWS permissions
-
-For any of the four constructs, pass narrowly scoped permissions to the revision execution role:
+Stage your framework's production output first — including runtime dependencies and a root `index.js` launcher that listens on `AWS_LAMBDA_HTTP_ENDPOINT` — and set `artifactDirectory` to the staged directory, not the framework project root. CDK synthesis never runs the framework build; the linked examples include launchers and `build:artifact` scripts.
 
 ```ts
 const site = new NextJsWebFunction(this, "Site", {
@@ -122,222 +91,36 @@ const site = new NextJsWebFunction(this, "Site", {
     // Each entry becomes one Allow statement on the revision execution role.
     { actions: "dynamodb:GetItem", resources: [table.tableArn] },
     { actions: ["s3:GetObject", "s3:PutObject"], resources: [bucket.bucketArn] },
-    { actions: "sns:Publish", resources: [topic.topicArn] },
   ],
 });
-// Standard CDK grant APIs (or hand-built least-privilege statements) also work:
+// Standard CDK grant APIs work too:
 // table.grantReadWriteData(site.webFunction.grantPrincipal)
 ```
 
-`actions` is one IAM action or an array of them; `resources` are ARN strings for any AWS service — pass any construct's ARN property (`bucket.bucketArn`, `table.tableArn`, `queue.queueArn`, `topic.topicArn`, `cluster.clusterArn`) or a literal ARN. Every entry is an Allow statement on the revision execution role; the role is also exposed directly as `site.webFunction.executionRole` / `site.webFunction.grantPrincipal`.
+Each construct fronts the Web Function with CloudFront: content-hashed assets come from a private S3 bucket, and other requests go to an IAM-protected home-region Web Function. The constructs do not accept `authType`, `endpointType`, or `cognito` — the delivery hard-requires IamAuth + HomeRegion; use `WebFunction` directly for other combinations. `endpointName` defaults to `"prod"`, `NODE_ENV` to `"production"`, and the asset bucket's removal policy to `RemovalPolicy.RETAIN`.
 
 ## Development
 
 Install [mise](https://mise.jdx.dev/getting-started.html), then use the pinned Node.js 24.22.1 and Bun 1.4.4 toolchain:
 
 ```sh
-mise trust
-mise install
+mise trust && mise install
 mise exec -- bun install --frozen-lockfile
 mise exec -- bun install --cwd examples --frozen-lockfile
-mise exec -- bun run build
-mise exec -- bun run test:types
-mise exec -- bun run test:types:cognito
+mise exec -- bun run build            # JSII assembly for Construct Hub
 mise exec -- bash examples/fullstack/shared/build-native-artifacts.sh
 mise exec -- bun test
+mise exec -- bun run test:types && mise exec -- bun run test:types:cognito
 ```
 
-The full suite uses host-native Astro, Next.js, Nuxt, and TanStack Start artifacts. The build script prepares all four using their lockfiles. The `oha` smoke test uses a local HTTP server and is skipped if `oha` is not on `PATH`; the fixture-based benchmark tests still run.
-
-With mise activated in your shell, you can also run the Bun commands directly. Consumers require Node.js 24 or later; the mise pins select reproducible development versions.
-
-CDK library, JSII, and JSII packaging versions are managed by `package.json` and `bun.lock`, not mise. The JSII tools use exact development dependency versions. The CDK CLI is a development dependency used to deploy the benchmark examples; it is not a runtime dependency of the construct.
-
-`bun run build` invokes the local JSII compiler and emits the `.jsii` assembly used by Construct Hub to generate language-aware API documentation.
-
-## Fullstack framework examples (local proof)
-
-Production-server examples for **Next.js 16.4.6** (standalone), **Nuxt 4.6.4** (Nitro `node-server`), **TanStack Start 1.169.5**, and **Astro 5.18.2** (SSR, `@astrojs/node` mode `"local"`) live under [`examples/fullstack/`](examples/fullstack/). Each example stages a deployable artifact, deploys it through the matching framework construct — `NextJsWebFunction`, `NuxtWebFunction`, `TanStackWebFunction`, or `AstroWebFunction`, which composes `WebFunction` with `WebFunctionDelivery` (immutable static assets from private S3, dynamic traffic to an IAM-protected Web Function) — and has local extracted-artifact smoke tests proving SSR, a native server mutation with validation, navigation, and static/public asset serving. The Astro example is local proof only: its native artifact is built and smoke-tested, with no arm64 container build or live deployment yet. See the per-example READMEs and [`examples/fullstack/shared/README.md`](examples/fullstack/shared/README.md).
-
-**Status:** local proof, local Linux Arm64 container proof, and **bounded live probes of Next.js and TanStack Start** using the operator-approved `KEYALL` cache policy (1-second TTL keyed on Authorization, all cookies, and all query strings). The earlier all-zero-TTL policy was rejected live; a viewer-function `x-forwarded-*` header error was found live and fixed with `x-public-*` headers. Nuxt was deployed, inspected, and **deleted on request**. TanStack Start with the stateless basic-auth flow was redeployed on 2026-11-19 and is **intentionally retained for viewing**: **https://d29nqdx0jywl18.cloudfront.net** (demo login `demo@example.com` / `demo-password`). See [`examples/fullstack/shared/live-resources.md`](examples/fullstack/shared/live-resources.md) for identifiers and cleanup commands. Browser hydration, streaming, and two-build old-asset retention remain unverified. All three artifacts were built in the pinned `linux/arm64` Node 24.22.1 container (`bash examples/fullstack/shared/build-arm64-artifacts.sh`); the runtime smoke covered the earlier pre-auth artifacts, and the post-auth TanStack rebuild was platform/artifact-content checked locally, with its live rollout the next gate. Further rollout is gated by [`examples/fullstack/shared/aws-checklist.md`](examples/fullstack/shared/aws-checklist.md). Build tooling never runs during CDK synthesis.
-
-## Web Functions Benchmark
-
-Start with **[Web Functions Benchmark](examples/benchmark/WEB_FUNCTIONS_BENCHMARK.md)**,
-the consolidated summary of all local-process, LocalStack, real-AWS, oha, and
-controlled-framework experiments, including cold starts, streaming, HTTP contracts,
-cost assumptions, and practical conclusions. Each experiment remains separate so
-results from different workloads and environments are not mistaken for one ranking.
-
-The six examples and load generator live under [`examples/`](examples/). To run only the five local server processes—without LocalStack, AWS, or API Gateway—use:
-
-```sh
-bun install --frozen-lockfile
-bun run bench:run:bare
-```
-
-This exercises `node-http`, Express, Hono, h3, and Bun against the same local workload suite. It starts and stops each server itself and writes timestamped JSON plus `examples/benchmark/results/bare-process-latest.json`. No AWS credentials, Docker, LocalStack, deployment, or AWS charges are required. Results are host-specific and are not directly comparable to the Frankfurt EC2 or AWS endpoint results.
-
-To drive the same five local servers with [oha](https://github.com/hatoo/oha) instead of the built-in runner (requires `oha` on your PATH, e.g. `brew install oha`):
-
-```sh
-bun run bench:run:bare:oha
-```
-
-It uses the same servers, workloads, and concurrency matrix, with a 2-second warm-up and a 5-second measured run per cell. Results go to `examples/benchmark/results/bare-process-oha-latest.json` and a timestamped copy. Server CPU is not sampled in this mode.
-
-The historical
-[LocalStack report](examples/benchmark/RESULTS.md) is separate from the
-[real AWS / LocalStack comparison](examples/benchmark/AWS_RESULTS.md), including cold starts,
-cloud scaling, telemetry differences and corrected Frankfurt pricing. HTML dashboards are
-`examples/benchmark/results/report.html` and `examples/benchmark/results/aws-report.html`.
-The newer [oha concurrent I/O results](examples/benchmark/OHA_RESULTS.md) use longer runs
-without the earlier temporary eight-environment cap; the older AWS report remains a
-separate historical measurement.
-
-LocalStack commands remain `bench:deploy`, `bench:run`, and `bench:report`. To target AWS
-explicitly (public test endpoints; incurs charges):
-
-```sh
-python3 -m venv .venv-bench
-.venv-bench/bin/pip install -r examples/benchmark/requirements-aws.txt
-AWS_REGION=eu-central-1 bunx cdk diff --all --profile jolo \
-  --app 'bun run examples/benchmark/cdk-app.ts' --no-change-set
-AWS_REGION=eu-central-1 bun run bench:deploy:aws --profile jolo
-BENCH_PYTHON=.venv-bench/bin/python bun run bench:run:aws --profile jolo --region eu-central-1
-bun run bench:report:aws
-```
-
-AWS raw data uses `results/aws-latest.json` plus timestamped checkpoints; it never overwrites
-LocalStack's `results/latest.json`. CloudWatch messages are preserved in checksum-verified
-`aws-cloudwatch-*.json.gz` archives. The AWS runner uses equal concurrency levels, validates
-application response bodies, checks revision identity during cold trials, and temporarily
-caps each Web endpoint at eight environments (`--max-environments 2..16`). The API Gateway
-example uses `/healthz` because AWS intercepts root `/ping` with a service-health response.
-
-Original configuration is restored on ordinary errors. After process interruption, restore
-the matching snapshot explicitly (replace the filename with the interrupted run's snapshot):
-
-```sh
-.venv-bench/bin/python examples/benchmark/aws-control.py --profile jolo --region eu-central-1 \
-  restore < examples/benchmark/results/aws-snapshot-RUN_ID.json
-```
-
-Brief WAN measurements are not a substitute for a longer, co-located AWS capacity or billing
-test. The deployed examples remain public until removed. To remove the six example stacks:
-
-```sh
-AWS_REGION=eu-central-1 bunx cdk destroy --all --profile jolo \
-  --app 'bun run examples/benchmark/cdk-app.ts'
-```
-
-Review retained log groups, ECR images and S3 buckets separately; stack removal may not remove
-all stored artifacts.
-
-### oha benchmark (TypeScript/Bun orchestration)
-
-Install `oha` (`brew install oha`), then run the focused concurrent I/O comparison:
-
-```sh
-bun run bench:run:oha --profile jolo --region eu-central-1
-```
-
-This runs all six deployed AWS servers at c=1,8,16,64, with two 30-second repeats
-and a five-second warm-up before each cell. It uses HTTP/1.1 and leaves AWS settings
-unchanged; account quotas can still constrain results. The wrapper is TypeScript,
-uses the AWS CLI only for read-only configuration/CloudWatch queries, and invokes
-`oha` for all measured load. It does not use the Python controller. To work around
-oha's parsing of scoped IPv6 nameservers on macOS, Bun resolves IPv4 addresses and
-passes them via `--connect-to`, retaining the original URL/Host/TLS verification.
-DNS mappings are recorded; IPv6 and DNS resolver performance are outside this test.
-
-Results are written incrementally to `examples/benchmark/OHA_RESULTS.md` and
-`examples/benchmark/results/oha-aws-latest.json`. Each timestamped `results/oha-*/`
-directory retains unmodified oha JSON, exact commands, warm-up runs, configuration
-snapshots and CloudWatch diagnostics. Only 2xx responses count toward successful
-throughput, regardless of oha's transport-level `successRate`.
-
-The report embeds SVG throughput, cold-start and estimated monthly cost graphs.
-Cold-start times come from the earlier verified AWS trials and are explicitly
-separate from oha's warm I/O measurements. Costs compare 10M requests over 30 days
-using Frankfurt rates retrieved from the AWS Price List API, with explicit Web
-CPU/memory/residency and classic billed-duration assumptions—not WAN latency.
-
-For the completed run, `cost-source.json` in its timestamped directory preserves
-selected pricing products, the Cost Explorer query/response and the resource-level
-reporting limitation. `cost-estimates.json` retains unrounded components and a
-source checksum. Provisional account/service charges are **not** attributed to
-individual functions or treated as evidence that the benchmark was free. Other
-runs without matching cost evidence show costs as unavailable, not zero.
-
-Regenerate the graphs, cold-start section and cost estimates from saved artifacts
-without sending benchmark traffic or refreshing AWS billing data:
-
-```sh
-bun run bench:report:oha
-```
-
-### Framework-focused AWS-hosted comparison
-
-```sh
-bun run bench:run:framework --profile jolo --region eu-central-1
-bun run bench:report:framework
-```
-
-This provisions a temporary four-core ARM `c7g.xlarge` in the existing default
-VPC, controlled through SSM with no inbound ports. It runs separately bundled
-node:http/Express/Hono/h3 minimal-response fixtures on one CPU, with oha on the
-other three CPUs: five randomized 30-second repeats at c=1,16,64 after 15-second
-warmups. Server CPU/request uses same-PID process counters. A second pass targets
-the existing deployed `/ping` endpoints with a 1000 RPS ceiling; that pass measures
-bounded-load latency, **not** maximum capacity or per-environment CPU efficiency.
-
-Allow roughly 90 minutes of measurements, plus provisioning and collection.
-On macOS the launcher holds a process-scoped idle-sleep assertion while it runs;
-it does not modify global power preferences. Closing the lid or forcing sleep
-can still interrupt local supervision. AWS-acknowledged SSM command IDs are
-retained even if the local CLI times out after receiving its response.
-Temporary EC2, EBS, IPv4 and Lambda request/compute charges apply. Results are
-saved separately in `examples/benchmark/FRAMEWORK_RESULTS.md` and
-`examples/benchmark/results/framework-*/`; the original I/O report is not replaced.
-Raw output is checkpointed to a private encrypted S3 bucket. Normal completion
-retrieves it before terminating the instance and destroying the runner stack.
-A 115-minute guest shutdown/termination backstop limits a disconnected runner's
-lifetime. Shared CDK bootstrap assets are not deleted.
-
-If interrupted, consult that run's `recovery.json` for its SSM command, instance,
-bucket and network IDs. Retrieve `s3://<bucket>/output/results.tar.gz` before cleanup.
-Terminate the recorded instance if still running, then destroy only the dedicated
-runner stack, supplying the recorded VPC/subnet IDs:
-
-```sh
-AWS_REGION=eu-central-1 bunx cdk destroy FrameworkBenchmarkRunner --profile jolo \
-  --app 'bun run examples/benchmark/framework-cdk.ts' \
-  --context vpcId=<recorded-vpc-id> --context subnetId=<recorded-subnet-id>
-```
-
-The offline report command verifies raw artifact hashes and does not provision
-resources or generate traffic. Missing cleanup evidence is reported as unknown,
-not silently assumed successful.
+The full suite uses host-native Astro, Next.js, Nuxt, and TanStack Start artifacts built from their lockfiles. The `oha` smoke test is skipped if `oha` is not on `PATH`. CDK/JSII versions come from `package.json` and `bun.lock`, not mise.
 
 ## Publishing
 
-[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs on pushes to `main` and can also be started manually. It uses the mise-pinned Node/Bun toolchain, installs the library and example dependencies from their frozen lockfiles, builds the JSII assembly, and runs runtime and compile-time tests. It publishes only when the version in `package.json` is not already on npm; existing versions are skipped, and registry errors fail the workflow rather than attempting a publish.
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) runs on pushes to `main`. It installs dependencies, builds the JSII assembly, runs the tests, and publishes only when the version in `package.json` is not already on npm. To release, bump `version` in `package.json`, update `bun.lock` with `bun install`, and push to `main`.
 
-To release, bump `version` in `package.json`, update `bun.lock` with `bun install`, and merge into `main`. The workflow does not automatically bump versions or commit changes.
-
-### One-time npm setup
-
-In the [npm package settings](https://www.npmjs.com/package/lambda-web-function-construct/access), add a **GitHub Actions trusted publisher** with:
-
-- **Organization or user:** `jolo-dev`
-- **Repository:** `lambda-web-function-construct`
-- **Workflow filename:** `publish.yml` (not its full path)
-- **Environment name:** leave empty
-- **Allowed actions:** enable direct publishing with `npm publish` if this option is shown
-
-The workflow uses GitHub OIDC instead of an npm token secret. Bun handles installation, builds, and tests; the npm CLI bundled with Node 24 handles the final publish because npm trusted publishing requires it. Publications include provenance. Until the trusted publisher is configured, new-version publishes will fail authentication; unchanged versions still skip publishing. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers).
+The workflow uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) with GitHub OIDC (no token secret) and includes provenance. One-time setup in the [npm package settings](https://www.npmjs.com/package/lambda-web-function-construct/access): add a **GitHub Actions trusted publisher** — user `jolo-dev`, repository `lambda-web-function-construct`, workflow filename `publish.yml`, no environment, and direct `npm publish` allowed if shown.
 
 ## License
 
-This library is licensed under the MIT License. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
