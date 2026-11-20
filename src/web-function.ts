@@ -25,6 +25,7 @@ import {
 import {
 	Effect,
 	IGrantable,
+	IPrincipal,
 	PolicyStatement as IamPolicyStatement,
 	Role,
 	ServicePrincipal,
@@ -244,7 +245,7 @@ type ParsedWebFunctionProps = z.infer<typeof WebFunctionPropsSchema>;
  *   endpoint:R -- L:outputs
  * ```
  */
-export class WebFunction extends Construct {
+export class WebFunction extends Construct implements IGrantable {
 	/** The ARN of the Lambda Web Function. */
 	public readonly functionArn: string;
 	/** The HTTPS domain name of the Lambda Web Function endpoint. */
@@ -260,7 +261,7 @@ export class WebFunction extends Construct {
 	/** The revision execution role. Use this to grant the function access to AWS services. */
 	public readonly executionRole: Role;
 	/** Grant principal for standard CDK grant APIs, e.g. table.grantReadWriteData(fn.grantPrincipal). */
-	public get grantPrincipal(): IGrantable {
+	public get grantPrincipal(): IPrincipal {
 		return this.executionRole;
 	}
 	/** User pool created only when cognito is configured. Retained on stack deletion. */

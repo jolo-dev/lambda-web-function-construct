@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
-import { PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
+import { CfnRole, PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import {
   WebFunction,
   WebFunctionAuthType,
@@ -167,16 +167,21 @@ test("exposes the revision execution role for grants", () => {
     resources: ["arn:aws:dynamodb:eu-central-1:123456789012:table/demo"],
   }));
   const template = Template.fromStack(stack);
-  template.hasResourceProperties("AWS::IAM::Policy", {
-    PolicyDocument: Match.objectLike({
-      Statement: Match.arrayWith([
-        // CDK serializes a single-action statement as a scalar string.
-        Match.objectLike({
-          Action: Match.stringLikeRegexp("dynamodb:GetItem"),
-        }),
-      ]),
-    }),
+  // Bind the grant to the execution role's policy: the logs statement and the
+  // dynamodb grant must coexist in one PolicyDocument whose Roles references
+  // the execution role logical ID (BucketDeployments own unrelated policies).
+  const roleLogicalId = stack.getLogicalId(
+    fn.executionRole.node.defaultChild as CfnRole,
+  );
+  const matched = Object.entries(
+    template.findResources("AWS::IAM::Policy"),
+  ).filter(([, resource]) => {
+    const document = JSON.stringify((resource as { Properties?: { PolicyDocument?: unknown } }).Properties?.PolicyDocument);
+    return document?.includes("logs:PutLogEvents") && document.includes("dynamodb:GetItem");
   });
+  expect(matched).toHaveLength(1);
+  const policyResource = matched[0]![1] as { Properties?: { Roles?: unknown[] } };
+  expect(policyResource.Properties?.Roles).toContainEqual({ Ref: roleLogicalId });
 });
 
 test("synthesizes all six benchmark example stacks cleanly", () => {
