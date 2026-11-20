@@ -153,7 +153,7 @@ service, not just the three convenience targets.
 |---|---|---|
 | `permissions.dynamodb` | `table.grantReadWriteData(role)` | Get/Put/Update/Delete item, Query, Scan, Batch*, DescribeTable |
 | `permissions.s3` | `bucket.grantReadWrite(role)` | s3:GetObject*, s3:PutObject*, ListBucket, DeleteObject* |
-| `permissions.sqs` | `queue.grantSendMessages(role)` | sqs:SendMessage, SendMessageBatch |
+| `permissions.sqs` | `queue.grantSendMessages(role)` | sqs:SendMessage (plus GetQueueAttributes/GetQueueUrl in current aws-cdk-lib; no SendMessageBatch) |
 
 Each accepts an array; grants apply to every element. Unlike `WebFunctionAuthType`,
 the CDK resource types (`ITable`/`IBucket`/`IQueue`) are TypeScript interfaces with no
