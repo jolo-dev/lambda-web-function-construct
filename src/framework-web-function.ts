@@ -24,7 +24,7 @@ export interface WebFunctionPermissions {
 	readonly dynamodb?: ITable[];
 	/** S3 buckets granted read/write object access. */
 	readonly s3?: IBucket[];
-	/** SQS queues granted message-send access (grantSendMessages; batch send is not included in current aws-cdk-lib). */
+	/** SQS queues granted message-send access (aws-cdk-lib 2.274 grantSendMessages emits send only, no SendMessageBatch). */
 	readonly sqs?: IQueue[];
 }
 
@@ -201,9 +201,11 @@ class FrameworkWebFunctionBase extends Construct {
 		props: FrameworkWebFunctionProps,
 		framework: FrameworkDefinition,
 	) {
-		super(scope, id);
+		// Validate and parse before attaching to the tree so a rejected construct
+		// never leaves an orphaned partial node behind.
 		const parsed = frameworkPropsSchema.parse(props);
 		assertFrameworkLayout(framework, parsed.artifactDirectory);
+		super(scope, id);
 
 		this.webFunction = new WebFunction(this, "App", {
 			artifact: {
