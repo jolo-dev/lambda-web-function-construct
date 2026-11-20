@@ -98,10 +98,6 @@ export interface FrameworkWebFunctionProps {
   readonly artifactDirectory: string;
   /** Name assigned to the Lambda Web Function. */
   readonly functionName: string;
-  /** Authentication mode; default IAM_AUTH. */
-  readonly authType?: WebFunctionAuthType;
-  /** Region behavior; default HOME_REGION. */
-  readonly endpointType?: WebFunctionEndpointType;
   /** Endpoint name; default "prod". */
   readonly endpointName?: string;
   /** Environment variables passed to the revision. */
@@ -110,9 +106,9 @@ export interface FrameworkWebFunctionProps {
   readonly permissions?: WebFunctionPermissions;
   /** Asset bucket removal policy; RETAIN by default, matching WebFunctionDelivery. */
   readonly removalPolicy?: RemovalPolicy;
-  /** Optional endpoint scaling, throttle, timeout, logging, and Cognito pass-through. */
+  /** Optional endpoint scaling, throttle, timeout, and logging pass-through. */
   // scalingConfig, throttleConfig, timeoutSeconds, maxConcurrencyPerEnvironment,
-  // loggingConfig, cognito are passed through to WebFunction unchanged.
+  // and loggingConfig are passed through to WebFunction unchanged.
 }
 ```
 
@@ -120,6 +116,13 @@ Common behavior:
 
 - `artifact: { directory: props.artifactDirectory, entrypoint: "index.js" }` — the
   launcher convention is fixed per construct, not configurable.
+- `authType` is fixed to `IAM_AUTH` and `endpointType` to `HOME_REGION` and are NOT
+  props: the mandatory internal `WebFunctionDelivery` hard-requires exactly that
+  combination (same-stack, IamAuth, HomeRegion), so exposing knobs that the delivery
+  would reject with a delivery-level error is a dead surface. `cognito` is likewise
+  not exposed because it requires `APPLICATION_MANAGED`. Consumers needing other
+  auth/endpoint/Cognito combinations use `WebFunction` + `WebFunctionDelivery`
+  directly.
 - `NODE_ENV=production` is set automatically unless the consumer overrides it in
   `environmentVariables`.
 - The framework asset mapping is built from `artifactDirectory` and the per-framework
@@ -152,9 +155,11 @@ service, not just the three convenience targets.
 | `permissions.s3` | `bucket.grantReadWrite(role)` | s3:GetObject*, s3:PutObject*, ListBucket, DeleteObject* |
 | `permissions.sqs` | `queue.grantSendMessages(role)` | sqs:SendMessage, SendMessageBatch |
 
-Each accepts an array; grants apply to every element. The zod schema validates the
-arrays as CDK resource objects (instance checks, mirroring the existing
-`WebFunctionAuthType` custom-validation pattern).
+Each accepts an array; grants apply to every element. Unlike `WebFunctionAuthType`,
+the CDK resource types (`ITable`/`IBucket`/`IQueue`) are TypeScript interfaces with no
+runtime class, so there is no `instanceof` to zod-validate against: the arrays are
+checked at synthesis with a duck-typed predicate (an ARN-bearing construct object)
+and the grant calls themselves fail fast if a wrong shape is passed.
 
 ### 5.5 Astro example (`examples/fullstack/astro`)
 
@@ -164,14 +169,19 @@ New minimal example following the established fullstack example pattern:
   server mutation endpoint (same shape as `/api/square` in the other examples),
   `/__probe/identity` marker route, mutable `robots.txt` in `public/`. No auth, no
   database, no Tailwind — matching the approved stateless fullstack demo scope.
-- **Build**: `astro.config.mjs` with the `@astrojs/node` adapter (`mode: "standalone"`);
-  `build:artifact` (`build-artifact.mjs`) stages `dist/client`, `dist/server`, the
-  launcher `index.js`, and the runtime `node_modules` subset required by the server
-  bundle (same approach as the TanStack example, including the `.bin` symlink
-  exclusion and traversal-safe staging).
+- **Build**: `astro.config.mjs` with the `@astrojs/node` adapter in `mode: "local"`;
+  the adapter's built server (`dist/server/entry.mjs`) exports its request handler
+  rather than binding its own listener, which is what makes the launcher contract
+  below implementable (standalone mode would bind `process.env.PORT` itself and
+  hide the bound port, breaking the port-0 + `READY` contract shared by the probe
+  harness). `build:artifact` (`build-artifact.mjs`) stages `dist/client`,
+  `dist/server`, the launcher `index.js`, and the runtime `node_modules` subset
+  required by the server bundle (same approach as the TanStack example, including
+  the `.bin` symlink exclusion and traversal-safe staging).
 - **Launcher**: same contract as the other examples — parse `AWS_LAMBDA_HTTP_ENDPOINT`
-  (including port 0), set `HOST`/`PORT` for the Astro node server, emit `READY:<port>`,
-  serve `/assets` statics and the probe route, refuse unparseable endpoints.
+  (including port 0), host the adapter's request handler on the launcher's own
+  `node:http` server, emit `READY:<bound port>`, serve `/_astro/` statics and the
+  probe route, refuse unparseable endpoints.
 - **Versions**: `astro@^5` with `@astrojs/node@^9` pinned in `bun.lock`; no other new
   runtime dependencies.
 - **Stack**: `AstroExampleStack` composes `AstroWebFunction` (dogfooding §5.7).
@@ -192,12 +202,17 @@ New minimal example following the established fullstack example pattern:
 ### 5.7 Dogfooding the existing examples
 
 `nextjs/stack.ts`, `nuxt/stack.ts`, and `tanstack-start/stack.ts` are refactored to
-construct the corresponding framework construct with the same function names and the
-TanStack session-secret wiring preserved via `environmentVariables`. Because the
-constructs now set `NODE_ENV=production` by default, the Next.js and Nuxt example
-templates gain that environment variable (a functional no-op change asserted in their
-tests where needed). Acceptance is that focused and full test suites pass with the
-same live-behavior contract (SSR, assets, mutations, probes), not byte-identical
+construct the corresponding framework construct with the same function names, the
+TanStack session-secret wiring preserved via `environmentVariables`, and an explicit
+`removalPolicy: RemovalPolicy.DESTROY` pass-through in all three — the examples
+currently set `DESTROY` on their asset buckets, and omitting it would silently flip
+them to the construct's RETAIN default, orphaning buckets on delete (this also
+touches the intentionally retained live TanStack deployment, so the refactor tests
+assert the DESTROY pass-through explicitly). Because the constructs now set
+`NODE_ENV=production` by default, the Next.js and Nuxt example templates gain that
+environment variable (a functional no-op change asserted in their tests where
+needed). Acceptance is that focused and full test suites pass with the same
+live-behavior contract (SSR, assets, mutations, probes), not byte-identical
 CloudFormation output; the TanStack stack additionally keeps its public
 `sessionPassword` prop API unchanged.
 
@@ -253,7 +268,7 @@ CloudFormation output; the TanStack stack additionally keeps its public
 | Q2 | Permissions API | Both: public `executionRole`/`grantPrincipal` core + typed `permissions` conveniences for DynamoDB/S3/SQS |
 | Q3 | Astro | Build the minimal `examples/fullstack/astro` example; no convention-only construct |
 | Q4 | Astro modes | SSR only (`@astrojs/node`); no static-only mode in v1 |
-| Q5 | Encapsulation | Constructs compose `WebFunction` + `WebFunctionDelivery` internally, expose both as readonly properties, full pass-through props |
+| Q5 | Encapsulation | Constructs compose `WebFunction` + `WebFunctionDelivery` internally, expose both as readonly properties, full pass-through props; `authType`/`endpointType`/`cognito` are not props because the mandatory delivery requires IAM_AUTH + HOME_REGION (review finding) |
 | Q6 | Naming | `TanStackWebFunction` (official framework casing) |
 | Q7 | Dogfooding | Refactor the three existing example stacks onto the constructs |
 | Q8 | Env conventions | No session special-casing; `NODE_ENV=production` set by the construct; plain `environmentVariables` passthrough |
