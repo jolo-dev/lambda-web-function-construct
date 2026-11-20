@@ -38,7 +38,7 @@ Rules all tasks follow:
 ### Task 1: Expose the revision execution role on WebFunction
 
 **Files:**
-- Modify: `src/web-function.ts` (role created ~line 456 inside the private upload path; class property block ~lines 216–229)
+- Modify: `src/web-function.ts` (role created ~line 456 inside the private upload path; class property block ~lines 246-261)
 - Test: `test/web-function.test.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -175,8 +175,10 @@ test("permissions.dynamodb grants read/write data access", () => {
     }),
   });
 });
-// s3 → bucket.grantReadWrite → hasResourceProperties("AWS::IAM::Policy", { Action: ["s3:GetObject*", …] })
-// sqs → queue.grantSendMessages → Action: ["sqs:SendMessage", "sqs:SendMessageBatch"]
+// s3 → bucket.grantReadWrite → same Match.objectLike/Match.arrayWith pattern as the
+//   dynamodb exemplar above, with Action: Match.arrayWith(["s3:GetObject*", "s3:PutObject*"])
+// sqs → queue.grantSendMessages → same pattern, Action: Match.arrayWith(["sqs:SendMessage", "sqs:SendMessageBatch"])
+// (never assert Action at a bare index — the role policy already carries the logs statement)
 // combined test: all three arrays with two elements each → exactly the union appears
 ```
 
@@ -315,7 +317,17 @@ test("dogfooded TanStack example stack sets asset bucket removal policy to DESTR
     artifactDirectory: artifactDir("tanstack"), // temp dir: index.js + dist/client/assets
     sessionPassword: "x".repeat(32),
   });
-  Template.fromStack(stack).hasResource("AWS::S3::Bucket", { DeletionPolicy: "Delete" });
+  // The stack contains TWO buckets and WebFunction's code bucket is always
+  // DeletionPolicy "Delete" (src/web-function.ts:426), so a single hasResource
+  // would pass even if the delivery pass-through were dropped. Assert both
+  // buckets — the pattern used in test/web-function-delivery.test.ts:338-350.
+  const template = Template.fromStack(stack);
+  template.resourceCountIs("AWS::S3::Bucket", 2);
+  expect(
+    Object.values(template.findResources("AWS::S3::Bucket"))
+      .map((bucket: { DeletionPolicy?: string }) => bucket.DeletionPolicy)
+      .sort(),
+  ).toEqual(["Delete", "Delete"]);
 });
 ```
 
