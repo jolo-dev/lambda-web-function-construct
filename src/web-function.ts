@@ -24,6 +24,7 @@ import {
 } from "aws-cdk-lib/aws-cognito";
 import {
 	Effect,
+	IGrantable,
 	PolicyStatement as IamPolicyStatement,
 	Role,
 	ServicePrincipal,
@@ -256,6 +257,12 @@ export class WebFunction extends Construct {
 	public readonly endpointType: WebFunctionEndpointType;
 	/** The revision identifier created for the deployment. */
 	public readonly revisionId: string;
+	/** The revision execution role. Use this to grant the function access to AWS services. */
+	public readonly executionRole: Role;
+	/** Grant principal for standard CDK grant APIs, e.g. table.grantReadWriteData(fn.grantPrincipal). */
+	public get grantPrincipal(): IGrantable {
+		return this.executionRole;
+	}
 	/** User pool created only when cognito is configured. Retained on stack deletion. */
 	public readonly userPool?: UserPool;
 	/** Public browser app client created only when cognito is configured. */
@@ -340,8 +347,12 @@ export class WebFunction extends Construct {
 		});
 
 		// Create the immutable code revision before routing traffic to it.
-		const webFunctionRevision = this.uploadToS3(webProps, webFunction);
-		this.revision = webFunctionRevision;
+		const { revision, executionRole } = this.uploadToS3(
+			webProps,
+			webFunction,
+		);
+		this.revision = revision;
+		this.executionRole = executionRole;
 
 		// Route the endpoint to the revision created above, not a guessed revision ID.
 		const webFunctionEndpoint = new CfnWebFunctionEndpoint(
@@ -357,18 +368,18 @@ export class WebFunction extends Construct {
 				scalingConfig: webProps.scalingConfig,
 				throttleConfig: webProps.throttleConfig,
 				revisionWeights: [
-					{ revisionId: webFunctionRevision.attrRevisionId, weight: 100 },
+					{ revisionId: revision.attrRevisionId, weight: 100 },
 				],
 			},
 		);
-		webFunctionEndpoint.node.addDependency(webFunctionRevision);
+		webFunctionEndpoint.node.addDependency(revision);
 
 		this.functionArn = webFunction.webFunctionRef.functionArn;
 		this.endpointDomainName = webFunctionEndpoint.attrDomainName;
 		this.endpointArn = webFunctionEndpoint.attrEndpointArn;
 		this.authType = props.authType;
 		this.endpointType = props.endpointType;
-		this.revisionId = webFunctionRevision.attrRevisionId;
+		this.revisionId = revision.attrRevisionId;
 
 		new CfnOutput(this, "webFunctionUrl", {
 			value: this.functionArn,
@@ -411,7 +422,7 @@ export class WebFunction extends Construct {
 	private uploadToS3(
 		webProps: ParsedWebFunctionProps,
 		webFunction: CfnWebFunction,
-	) {
+	): { revision: CfnWebFunctionRevision; executionRole: Role } {
 		const zipFile = webProps.artifact
 			? this.zipArtifact(webProps.artifact.directory)
 			: this.zipBundle(this.bundleEntry(webProps.entry!));
@@ -522,7 +533,7 @@ export class WebFunction extends Construct {
 				bucketReadPolicy.policyDependable,
 			);
 		}
-		return cfnWebFunctionRevision;
+		return { revision: cfnWebFunctionRevision, executionRole: iamRole };
 	}
 	private bundleEntry(entry: string): string {
 		const bundleDirectory = path.join(

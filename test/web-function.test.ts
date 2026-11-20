@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import { PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import {
   WebFunction,
   WebFunctionAuthType,
@@ -26,6 +27,16 @@ writeFileSync(
   entry,
   "export const handler = (): Response => new Response('ok');\n",
 );
+
+function minimalProps(functionName: string) {
+  return {
+    entry,
+    functionName,
+    authType: WebFunctionAuthType.APPLICATION_MANAGED,
+    endpointType: WebFunctionEndpointType.HOME_REGION,
+    endpointName: functionName,
+  };
+}
 
 test.each([
   [WebFunctionAuthType.IAM_AUTH, "IamAuth"],
@@ -139,6 +150,33 @@ test("creates a web function endpoint after its first revision", () => {
   const revision = template.findResources("AWS::Lambda::WebFunctionRevision")[revisionLogicalId!];
   expect(revision.DependsOn).toContain(loggingPolicyId);
   expect(assembly.directory).toBeTruthy();
+});
+
+test("exposes the revision execution role for grants", () => {
+  const app = new App();
+  const stack = new Stack(app, "Stack");
+  const fn = new WebFunction(stack, "Fn", minimalProps("expose-role"));
+  expect(fn.executionRole).toBeInstanceOf(Role);
+  // Grants via the standard CDK API must land on the same role.
+  const role = fn.executionRole;
+  expect(fn.grantPrincipal).toBe(role);
+  // WebFunction already adds its own CloudWatch-logs statement to this policy,
+  // so the caller-side grant lands after it — match by content, not index.
+  role.addToPrincipalPolicy(new PolicyStatement({
+    actions: ["dynamodb:GetItem"],
+    resources: ["arn:aws:dynamodb:eu-central-1:123456789012:table/demo"],
+  }));
+  const template = Template.fromStack(stack);
+  template.hasResourceProperties("AWS::IAM::Policy", {
+    PolicyDocument: Match.objectLike({
+      Statement: Match.arrayWith([
+        // CDK serializes a single-action statement as a scalar string.
+        Match.objectLike({
+          Action: Match.stringLikeRegexp("dynamodb:GetItem"),
+        }),
+      ]),
+    }),
+  });
 });
 
 test("synthesizes all six benchmark example stacks cleanly", () => {
