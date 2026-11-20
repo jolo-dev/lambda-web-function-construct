@@ -124,7 +124,7 @@ const frameworkPropsSchema = z
 			.object({ maxEnvironments: z.number().int().positive().optional() })
 			.optional(),
 		throttleConfig: z
-			.object({ rateLimit: z.number().int().nonnegative().optional() })
+			.object({ rateLimit: z.number().int().nonnegative().max(10000).optional() })
 			.optional(),
 		maxConcurrencyPerEnvironment: z.number().int().min(1).max(128).optional(),
 		timeoutSeconds: z.number().int().min(3).max(900).optional(),

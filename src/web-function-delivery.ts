@@ -123,7 +123,8 @@ const WebFunctionDeliveryPropsSchema = z
  * Function endpoint through a Lambda Web Function origin access control.
  *
  * The delivery owns the Web Function's CloudFront invoke policy, so at most one delivery
- * can be attached to a Web Function. Dynamic responses are not cached by CloudFront.
+ * can be attached to a Web Function. Dynamic responses are cached for at most 1 second,
+ * keyed on Authorization, cookies, and query strings (operator-approved KEYALL policy).
  * A throwing constructor can leave partially created constructs in the tree, so callers
  * must discard the app rather than catch the error and continue synthesizing it.
  *
