@@ -13,11 +13,11 @@ export {
 	WebFunctionAuthType,
 	WebFunctionEndpointType,
 } from "./web-function-options";
+export { NextJsWebFunction } from "./nextjs-web-function";
+export { TanStackWebFunction } from "./tanstack-web-function";
+export { NuxtWebFunction } from "./nuxt-web-function";
+export { AstroWebFunction } from "./astro-web-function";
 export {
-	AstroWebFunction,
-	NuxtWebFunction,
-	NextJsWebFunction,
-	TanStackWebFunction,
 	type FrameworkWebFunctionProps,
-	type WebFunctionPermissions,
+	type WebFunctionPermission,
 } from "./framework-web-function";

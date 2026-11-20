@@ -1,11 +1,13 @@
 import {
 	WebFunctionAuthType,
 	WebFunctionEndpointType,
+	type FrameworkWebFunctionProps,
 	type WebFunction,
-	type WebFunctionProps,
 	type WebFunctionArtifactOptions,
 	type WebFunctionCognitoOptions,
 	type WebFunctionDeliveryProps,
+	type WebFunctionPermission,
+	type WebFunctionProps,
 } from "../../src";
 
 const valid: WebFunctionProps = {
@@ -72,4 +74,42 @@ const invalidDelivery: WebFunctionDeliveryProps = {
 	],
 };
 
-void [valid, invalidString, invalidAuthType, invalidEndpointType, withCognito, invalidCognito, delivery, invalidDelivery];
+// Framework construct props: permissions are generic IAM statements whose
+// resources are ARN strings (jsii forbids readonly arrays and anonymous object
+// unions, so constructs are passed via their ARN property, not by reference).
+const frameworkPermission: WebFunctionPermission = {
+	actions: "dynamodb:GetItem",
+	resources: ["arn:aws:dynamodb:eu-central-1:123456789012:table/demo"],
+};
+const frameworkProps: FrameworkWebFunctionProps = {
+	artifactDirectory: "examples/fullstack/artifacts/nextjs/native-darwin-arm64",
+	functionName: "my-site",
+	permissions: [
+		frameworkPermission,
+		{ actions: ["s3:GetObject", "s3:PutObject"], resources: ["arn:aws:s3:::my-bucket"] },
+	],
+};
+const invalidFrameworkPermission: WebFunctionPermission = {
+	actions: "sns:Publish",
+	// @ts-expect-error Resources must be ARN strings, not a single string.
+	resources: "arn:aws:sns:eu-central-1:123456789012:topic/demo",
+};
+const invalidFrameworkPermissionObject: WebFunctionPermission = {
+	actions: "sns:Publish",
+	// @ts-expect-error Resources must be ARN strings, not construct references or arn wrappers.
+	resources: [{ arn: "arn:aws:sns:eu-central-1:123456789012:topic/demo" }],
+};
+
+void [
+	valid,
+	invalidString,
+	invalidAuthType,
+	invalidEndpointType,
+	withCognito,
+	invalidCognito,
+	delivery,
+	invalidDelivery,
+	frameworkProps,
+	invalidFrameworkPermission,
+	invalidFrameworkPermissionObject,
+];

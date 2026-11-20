@@ -1,13 +1,11 @@
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { RemovalPolicy } from "aws-cdk-lib";
-import type { ITable } from "aws-cdk-lib/aws-dynamodb";
+import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
 import {
 	CfnWebFunctionEndpoint,
 	CfnWebFunctionRevision,
 } from "aws-cdk-lib/aws-lambda";
-import type { IBucket } from "aws-cdk-lib/aws-s3";
-import type { IQueue } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 import { z } from "zod";
 import { WebFunction } from "./web-function";
@@ -15,17 +13,19 @@ import { WebFunctionDelivery } from "./web-function-delivery";
 import { WebFunctionAuthType, WebFunctionEndpointType } from "./web-function-options";
 
 /**
- * Service grants applied to the framework construct's execution role.
- * Anything else (least privilege or other services) can use
+ * One IAM permission statement applied to the revision execution role.
+ * Anything else (least privilege or standard CDK grant APIs) can use
  * `site.webFunction.executionRole` or `site.webFunction.grantPrincipal` directly.
  */
-export interface WebFunctionPermissions {
-	/** DynamoDB tables granted read/write data access. */
-	readonly dynamodb?: ITable[];
-	/** S3 buckets granted read/write object access. */
-	readonly s3?: IBucket[];
-	/** SQS queues granted message-send access (aws-cdk-lib 2.274 grantSendMessages emits send only, no SendMessageBatch). */
-	readonly sqs?: IQueue[];
+export interface WebFunctionPermission {
+	/** IAM actions, e.g. "dynamodb:GetItem" or ["s3:GetObject", "s3:PutObject"]. */
+	readonly actions: string | string[];
+	/**
+	 * Resource ARNs for any AWS service. Pass the construct's ARN property
+	 * directly, e.g. bucket.bucketArn, table.tableArn, queue.queueArn,
+	 * topic.topicArn, cluster.clusterArn — or a literal ARN string.
+	 */
+	readonly resources: string[];
 }
 
 /**
@@ -47,8 +47,8 @@ export interface FrameworkWebFunctionProps {
 	readonly endpointName?: string;
 	/** Environment variables passed to the revision. NODE_ENV defaults to "production". */
 	readonly environmentVariables?: { readonly [key: string]: string };
-	/** Service grants applied to the execution role. */
-	readonly permissions?: WebFunctionPermissions;
+	/** IAM permission statements applied to the execution role; each entry becomes one Allow statement. */
+	readonly permissions?: WebFunctionPermission[];
 	/** Asset bucket removal policy. RETAIN by default, matching WebFunctionDelivery. */
 	readonly removalPolicy?: RemovalPolicy;
 	/** Optional description for the endpoint. */
@@ -66,7 +66,7 @@ export interface FrameworkWebFunctionProps {
 }
 
 /** Per-framework artifact layout: launcher, hashed asset directory, and URL prefix. */
-interface FrameworkDefinition {
+export interface FrameworkDefinition {
 	/** Framework display name used in validation messages. */
 	readonly name: string;
 	/** Launcher file expected at the artifact root; "index.js" for every framework. */
@@ -77,27 +77,58 @@ interface FrameworkDefinition {
 	readonly urlPrefix: string;
 }
 
-// ITable, IBucket, and IQueue are TypeScript interfaces without a runtime class,
-// so the arrays are validated with duck-typed ARN predicates; the grant calls
-// themselves fail fast if a wrong shape is passed.
-const tableSchema = z.custom<ITable>(
-	(value) =>
-		typeof value === "object" && value !== null &&
-		typeof (value as { tableArn?: unknown }).tableArn === "string",
-	{ message: "Expected a DynamoDB ITable construct" },
-);
-const bucketSchema = z.custom<IBucket>(
-	(value) =>
-		typeof value === "object" && value !== null &&
-		typeof (value as { bucketArn?: unknown }).bucketArn === "string",
-	{ message: "Expected an S3 IBucket construct" },
-);
-const queueSchema = z.custom<IQueue>(
-	(value) =>
-		typeof value === "object" && value !== null &&
-		typeof (value as { queueArn?: unknown }).queueArn === "string",
-	{ message: "Expected an SQS IQueue construct" },
-);
+/** Next.js layout: `index.js` launcher, `.next/static` assets under `/_next/static/`. */
+export const NEXTJS_FRAMEWORK: FrameworkDefinition = {
+	name: "Next.js",
+	launcher: "index.js",
+	assetDirectory: [".next", "static"],
+	urlPrefix: "/_next/static/",
+};
+
+/** TanStack Start layout: `index.js` launcher, `dist/client/assets` assets under `/assets/`. */
+export const TANSTACK_FRAMEWORK: FrameworkDefinition = {
+	name: "TanStack Start",
+	launcher: "index.js",
+	assetDirectory: ["dist", "client", "assets"],
+	urlPrefix: "/assets/",
+};
+
+/** Nuxt layout: `index.js` launcher, `.output/public/_nuxt` assets under `/_nuxt/`. */
+export const NUXT_FRAMEWORK: FrameworkDefinition = {
+	name: "Nuxt",
+	launcher: "index.js",
+	assetDirectory: [".output", "public", "_nuxt"],
+	urlPrefix: "/_nuxt/",
+};
+
+/** Astro layout: `index.js` launcher, `dist/client/_astro` assets under `/_astro/`. */
+export const ASTRO_FRAMEWORK: FrameworkDefinition = {
+	name: "Astro",
+	launcher: "index.js",
+	assetDirectory: ["dist", "client", "_astro"],
+	urlPrefix: "/_astro/",
+};
+
+// Each permission entry becomes one Allow PolicyStatement. jsii forbids readonly
+// arrays and anonymous object unions in public props, so `resources` is a plain
+// string[] (consumers pass any construct's ARN property or a literal ARN).
+const permissionSchema = z.object({
+	actions: z.union(
+		[
+			z.string().min(1, "permission actions must not be an empty string"),
+			z
+				.array(z.string().min(1, "permission actions must not contain empty strings"))
+				.min(1, "permission actions must not be an empty array"),
+		],
+		{
+			error:
+				"permission actions must be a non-empty string or a non-empty array of non-empty strings",
+		},
+	),
+	resources: z
+		.array(z.string().min(1, "permission resources must not contain empty strings"))
+		.min(1, "permission resources must not be an empty array"),
+});
 
 const frameworkPropsSchema = z
 	.object({
@@ -105,13 +136,7 @@ const frameworkPropsSchema = z
 		functionName: z.string().min(1),
 		endpointName: z.string().min(1).optional(),
 		environmentVariables: z.record(z.string(), z.string()).optional(),
-		permissions: z
-			.object({
-				dynamodb: z.array(tableSchema).optional(),
-				s3: z.array(bucketSchema).optional(),
-				sqs: z.array(queueSchema).optional(),
-			})
-			.optional(),
+		permissions: z.array(permissionSchema).optional(),
 		removalPolicy: z
 			.custom<RemovalPolicy>(
 				(value) =>
@@ -188,9 +213,15 @@ function assertFrameworkLayout(
  * Deploys a prebuilt framework artifact as a Lambda Web Function behind a
  * CloudFront delivery: the launcher runs as the function code, the framework's
  * content-hashed static assets are served from a private S3 bucket, and optional
- * permissions are granted to the revision execution role.
+ * permission statements are applied to the revision execution role.
+ *
+ * Internal base shared by the per-framework constructs; imported across the
+ * construct files but not re-exported from `src/index.ts`.
+ *
+ * @internal jsii hidden base class: exported from the module for the per-framework
+ * constructs, excluded from the assembly.
  */
-class FrameworkWebFunctionBase extends Construct {
+export class FrameworkWebFunctionBase extends Construct {
 	/** The deployed Web Function (endpoint is IamAuth + HomeRegion). */
 	public readonly webFunction: WebFunction;
 	/** The CloudFront delivery serving static assets and dynamic traffic. */
@@ -245,126 +276,15 @@ class FrameworkWebFunctionBase extends Construct {
 		});
 
 		const role = this.webFunction.executionRole;
-		parsed.permissions?.dynamodb?.forEach((table) =>
-			table.grantReadWriteData(role),
-		);
-		parsed.permissions?.s3?.forEach((bucket) => bucket.grantReadWrite(role));
-		parsed.permissions?.sqs?.forEach((queue) => queue.grantSendMessages(role));
-	}
-}
-
-/**
- * Deploys a prebuilt Next.js standalone artifact as a Lambda Web Function with a
- * CloudFront delivery. The launcher is `index.js` at the artifact root and the
- * content-hashed assets under `.next/static/` are served from private S3 under
- * `/_next/static/`.
- *
- * ```ts
- * new NextJsWebFunction(this, "Site", {
- *   artifactDirectory: "examples/fullstack/artifacts/nextjs/native-darwin-arm64",
- *   functionName: "my-site",
- *   permissions: {
- *     dynamodb: [table], // grantReadWriteData
- *     s3: [bucket],      // grantReadWrite
- *     sqs: [queue],      // grantSendMessages
- *   },
- * });
- * ```
- */
-export class NextJsWebFunction extends FrameworkWebFunctionBase {
-	constructor(scope: Construct, id: string, props: FrameworkWebFunctionProps) {
-		super(scope, id, props, {
-			name: "Next.js",
-			launcher: "index.js",
-			assetDirectory: [".next", "static"],
-			urlPrefix: "/_next/static/",
-		});
-	}
-}
-
-/**
- * Deploys a prebuilt TanStack Start artifact as a Lambda Web Function with a
- * CloudFront delivery. The launcher is `index.js` at the artifact root and the
- * content-hashed assets under `dist/client/assets/` are served from private S3
- * under `/assets/`.
- *
- * ```ts
- * new TanStackWebFunction(this, "Site", {
- *   artifactDirectory: "examples/fullstack/artifacts/tanstack-start/native-darwin-arm64",
- *   functionName: "my-site",
- *   permissions: {
- *     dynamodb: [table], // grantReadWriteData
- *     s3: [bucket],      // grantReadWrite
- *     sqs: [queue],      // grantSendMessages
- *   },
- * });
- * ```
- */
-export class TanStackWebFunction extends FrameworkWebFunctionBase {
-	constructor(scope: Construct, id: string, props: FrameworkWebFunctionProps) {
-		super(scope, id, props, {
-			name: "TanStack Start",
-			launcher: "index.js",
-			assetDirectory: ["dist", "client", "assets"],
-			urlPrefix: "/assets/",
-		});
-	}
-}
-
-/**
- * Deploys a prebuilt Nuxt (Nitro node-server) artifact as a Lambda Web Function
- * with a CloudFront delivery. The launcher is `index.js` at the artifact root and
- * the content-hashed assets under `.output/public/_nuxt/` are served from private
- * S3 under `/_nuxt/`.
- *
- * ```ts
- * new NuxtWebFunction(this, "Site", {
- *   artifactDirectory: "examples/fullstack/artifacts/nuxt/native-darwin-arm64",
- *   functionName: "my-site",
- *   permissions: {
- *     dynamodb: [table], // grantReadWriteData
- *     s3: [bucket],      // grantReadWrite
- *     sqs: [queue],      // grantSendMessages
- *   },
- * });
- * ```
- */
-export class NuxtWebFunction extends FrameworkWebFunctionBase {
-	constructor(scope: Construct, id: string, props: FrameworkWebFunctionProps) {
-		super(scope, id, props, {
-			name: "Nuxt",
-			launcher: "index.js",
-			assetDirectory: [".output", "public", "_nuxt"],
-			urlPrefix: "/_nuxt/",
-		});
-	}
-}
-
-/**
- * Deploys a prebuilt Astro (SSR, `@astrojs/node`) artifact as a Lambda Web
- * Function with a CloudFront delivery. The launcher is `index.js` at the
- * artifact root and the content-hashed assets under `dist/client/_astro/` are
- * served from private S3 under `/_astro/`.
- *
- * ```ts
- * new AstroWebFunction(this, "Site", {
- *   artifactDirectory: "examples/fullstack/artifacts/astro/native-darwin-arm64",
- *   functionName: "my-site",
- *   permissions: {
- *     dynamodb: [table], // grantReadWriteData
- *     s3: [bucket],      // grantReadWrite
- *     sqs: [queue],      // grantSendMessages
- *   },
- * });
- * ```
- */
-export class AstroWebFunction extends FrameworkWebFunctionBase {
-	constructor(scope: Construct, id: string, props: FrameworkWebFunctionProps) {
-		super(scope, id, props, {
-			name: "Astro",
-			launcher: "index.js",
-			assetDirectory: ["dist", "client", "_astro"],
-			urlPrefix: "/_astro/",
-		});
+		for (const permission of parsed.permissions ?? []) {
+			const actions = typeof permission.actions === "string"
+				? [permission.actions]
+				: permission.actions;
+			role.addToPolicy(new PolicyStatement({
+				effect: Effect.ALLOW,
+				actions,
+				resources: permission.resources,
+			}));
+		}
 	}
 }

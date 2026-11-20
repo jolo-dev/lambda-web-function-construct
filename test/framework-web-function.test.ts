@@ -5,8 +5,8 @@ import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { AttributeType, Table } from "aws-cdk-lib/aws-dynamodb";
-import { Bucket } from "aws-cdk-lib/aws-s3";
-import { Queue } from "aws-cdk-lib/aws-sqs";
+import { Topic } from "aws-cdk-lib/aws-sns";
+import { ZodError } from "zod";
 import {
   NextJsWebFunction,
   NuxtWebFunction,
@@ -141,64 +141,135 @@ test("rejects a missing static asset directory with a framework-specific message
   })).toThrow(/Next\.js artifact must contain the required static asset directory "\.next\/static"/);
 });
 
-test("permissions.dynamodb grants read/write data access", () => {
-  const stack = new Stack(new App(), "DynamodbPermissionsStack");
+test("a permission entry adds one Allow statement for a string action and one ARN", () => {
+  const stack = new Stack(new App(), "PermissionStatementStack");
+  new NextJsWebFunction(stack, "Site", {
+    artifactDirectory: artifactDir("nextjs"),
+    functionName: "permission-statement",
+    permissions: [{ actions: "s3:GetObject", resources: ["arn:aws:s3:::my-bucket"] }],
+  });
+  // The role's default policy already carries the logs statement, so the added
+  // statement is content-matched — never a bare index. CDK serializes a
+  // single-element Action/Resource as a plain string, not an array.
+  Template.fromStack(stack).hasResourceProperties("AWS::IAM::Policy", {
+    PolicyDocument: Match.objectLike({
+      Statement: Match.arrayWith([Match.objectLike({
+        Effect: "Allow",
+        Action: "s3:GetObject",
+        Resource: "arn:aws:s3:::my-bucket",
+      })]),
+    }),
+  });
+});
+
+test("an action array with multiple ARN resources becomes one Allow statement", () => {
+  const stack = new Stack(new App(), "ActionArrayStack");
+  new NextJsWebFunction(stack, "Site", {
+    artifactDirectory: artifactDir("nextjs"),
+    functionName: "action-array",
+    permissions: [{
+      actions: ["s3:GetObject", "s3:PutObject"],
+      resources: ["arn:aws:s3:::my-bucket", "arn:aws:s3:::other-bucket"],
+    }],
+  });
+  Template.fromStack(stack).hasResourceProperties("AWS::IAM::Policy", {
+    PolicyDocument: Match.objectLike({
+      Statement: Match.arrayWith([Match.objectLike({
+        Effect: "Allow",
+        Action: ["s3:GetObject", "s3:PutObject"],
+        Resource: ["arn:aws:s3:::my-bucket", "arn:aws:s3:::other-bucket"],
+      })]),
+    }),
+  });
+});
+
+test("multiple permission entries land as separate statements on the same role policy", () => {
+  const stack = new Stack(new App(), "MultiplePermissionsStack");
+  // Resources are the construct's ARN property, passed as a string — including an
+  // SNS topic, a service far outside the old dynamodb/s3/sqs conveniences.
   const table = new Table(stack, "Table", {
     partitionKey: { name: "id", type: AttributeType.STRING },
   });
+  const topic = new Topic(stack, "Topic");
   new NextJsWebFunction(stack, "Site", {
     artifactDirectory: artifactDir("nextjs"),
-    functionName: "dynamodb-grants",
-    permissions: { dynamodb: [table] },
+    functionName: "multiple-permissions",
+    permissions: [
+      { actions: "dynamodb:GetItem", resources: [table.tableArn] },
+      { actions: "sns:Publish", resources: [topic.topicArn] },
+    ],
   });
-  // The role's default policy already carries the logs statement, so grants never
-  // sit at a fixed index. Match.arrayWith is an ordered-subsequence matcher over
-  // the pinned aws-cdk-lib grant emission (Query, GetItem, ..., PutItem).
   Template.fromStack(stack).hasResourceProperties("AWS::IAM::Policy", {
     PolicyDocument: Match.objectLike({
-      Statement: Match.arrayWith([Match.objectLike({
-        Action: Match.arrayWith(["dynamodb:Query", "dynamodb:GetItem", "dynamodb:PutItem"]),
-      })]),
+      Statement: Match.arrayWith([
+        // Single-element Action/Resource serialize as plain strings/objects.
+        Match.objectLike({
+          Effect: "Allow",
+          Action: "dynamodb:GetItem",
+          Resource: stack.resolve(table.tableArn),
+        }),
+        Match.objectLike({
+          Effect: "Allow",
+          Action: "sns:Publish",
+          Resource: stack.resolve(topic.topicArn),
+        }),
+      ]),
     }),
   });
 });
 
-test("permissions.s3 grants read/write object access", () => {
-  const stack = new Stack(new App(), "S3PermissionsStack");
-  const bucket = new Bucket(stack, "Bucket");
-  new NextJsWebFunction(stack, "Site", {
-    artifactDirectory: artifactDir("nextjs"),
-    functionName: "s3-grants",
-    permissions: { s3: [bucket] },
-  });
-  Template.fromStack(stack).hasResourceProperties("AWS::IAM::Policy", {
-    PolicyDocument: Match.objectLike({
-      Statement: Match.arrayWith([Match.objectLike({
-        // aws-cdk-lib grants s3:PutObject (no wildcard) since ACL-modification
-        // actions were removed from grantReadWrite.
-        Action: Match.arrayWith(["s3:GetObject*", "s3:DeleteObject*", "s3:PutObject"]),
-      })]),
-    }),
-  });
+/**
+ * Builds the construct with the given invalid permissions and returns the zod
+ * issues (path + message) it rejected with, so rejection tests match content.
+ */
+function permissionRejectionIssues(
+  permissions: readonly unknown[],
+): { readonly path: string; readonly message: string }[] {
+  let caught: unknown;
+  try {
+    new NextJsWebFunction(new Stack(new App(), "RejectionStack"), "Site", {
+      artifactDirectory: artifactDir("nextjs"),
+      functionName: "rejection",
+      permissions: permissions as never,
+    });
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(ZodError);
+  return (caught as ZodError).issues.map((issue) => ({
+    path: issue.path.join("."),
+    message: issue.message,
+  }));
+}
+
+test("rejects a permission with empty actions", () => {
+  const emptyString = permissionRejectionIssues([
+    { actions: "", resources: ["arn:aws:s3:::my-bucket"] },
+  ]);
+  expect(emptyString).toEqual([
+    expect.objectContaining({ path: "permissions.0.actions" }),
+  ]);
+  const emptyArray = permissionRejectionIssues([
+    { actions: [], resources: ["arn:aws:s3:::my-bucket"] },
+  ]);
+  expect(emptyArray).toEqual([
+    expect.objectContaining({ path: "permissions.0.actions" }),
+  ]);
 });
 
-test("permissions.sqs grants send access", () => {
-  const stack = new Stack(new App(), "SqsPermissionsStack");
-  const queue = new Queue(stack, "Queue");
-  new NextJsWebFunction(stack, "Site", {
-    artifactDirectory: artifactDir("nextjs"),
-    functionName: "sqs-grants",
-    permissions: { sqs: [queue] },
-  });
-  Template.fromStack(stack).hasResourceProperties("AWS::IAM::Policy", {
-    PolicyDocument: Match.objectLike({
-      Statement: Match.arrayWith([Match.objectLike({
-        // grantSendMessages emits SendMessage plus the queue-lookup actions;
-        // SendMessageBatch is not part of this grant.
-        Action: Match.arrayWith(["sqs:SendMessage", "sqs:GetQueueAttributes"]),
-      })]),
-    }),
-  });
+test("rejects a permission with empty resources", () => {
+  const emptyArray = permissionRejectionIssues([
+    { actions: "s3:GetObject", resources: [] },
+  ]);
+  expect(emptyArray).toEqual([
+    expect.objectContaining({ path: "permissions.0.resources" }),
+  ]);
+  const emptyString = permissionRejectionIssues([
+    { actions: "s3:GetObject", resources: [""] },
+  ]);
+  expect(emptyString).toEqual([
+    expect.objectContaining({ path: "permissions.0.resources.0" }),
+  ]);
 });
 
 test("TanStackWebFunction maps dist/client/assets to /assets/ and sets NODE_ENV", () => {
@@ -231,39 +302,6 @@ test("NuxtWebFunction maps .output/public/_nuxt to /_nuxt/ and sets NODE_ENV", (
     ServiceConfig: { EnvironmentVariables: { NODE_ENV: "production" } },
   });
   expect(s3BackedPathPattern(template)).toBe("/_nuxt/*");
-});
-
-test("combined permissions grant the union on the execution role policy", () => {
-  const stack = new Stack(new App(), "CombinedPermissionsStack");
-  const tables = [0, 1].map((i) => new Table(stack, `Table${i}`, {
-    partitionKey: { name: "id", type: AttributeType.STRING },
-  }));
-  const buckets = [0, 1].map((i) => new Bucket(stack, `Bucket${i}`));
-  const queues = [0, 1].map((i) => new Queue(stack, `Queue${i}`));
-  new NextJsWebFunction(stack, "Site", {
-    artifactDirectory: artifactDir("nextjs"),
-    functionName: "combined-grants",
-    permissions: { dynamodb: tables, s3: buckets, sqs: queues },
-  });
-  // All three families land in the same PolicyDocument (the execution role's
-  // default policy). arrayWith is an ordered-subsequence matcher, so the
-  // statement patterns follow the document order the grants are added in:
-  // dynamodb, then s3, then sqs (logs first, bucket deployments own other policies).
-  Template.fromStack(stack).hasResourceProperties("AWS::IAM::Policy", {
-    PolicyDocument: Match.objectLike({
-      Statement: Match.arrayWith([
-        Match.objectLike({
-          Action: Match.arrayWith(["dynamodb:Query", "dynamodb:GetItem", "dynamodb:PutItem"]),
-        }),
-        Match.objectLike({
-          Action: Match.arrayWith(["s3:GetObject*", "s3:DeleteObject*", "s3:PutObject"]),
-        }),
-        Match.objectLike({
-          Action: Match.arrayWith(["sqs:SendMessage", "sqs:GetQueueAttributes"]),
-        }),
-      ]),
-    }),
-  });
 });
 
 // Spec §5.7: the dogfooded TanStack example stack must pass removalPolicy DESTROY
