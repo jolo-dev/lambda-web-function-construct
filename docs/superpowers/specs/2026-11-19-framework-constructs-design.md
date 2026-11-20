@@ -79,18 +79,31 @@ WebFunction (existing; gains executionRole/grantPrincipal)
 ```
 
 All four construct classes are exported from `src/index.ts` together with their
-props interfaces and the `WebFunctionPermissions` type. The shared base is internal.
+props interfaces and the permission types. The shared base stays internal to the
+framework module family (it is imported across files but not re-exported from
+`src/index.ts`).
+
+**File layout (revised 2026-11-20, operator review):** one file per construct,
+matching the repo's one-construct-per-file convention:
+
+- `src/framework-web-function.ts` — shared base (`FrameworkWebFunctionBase`),
+  `FrameworkWebFunctionProps`, the props zod schema, per-framework definitions,
+  and permission types/validation
+- `src/nextjs-web-function.ts` — `NextJsWebFunction`
+- `src/tanstack-web-function.ts` — `TanStackWebFunction`
+- `src/nuxt-web-function.ts` — `NuxtWebFunction`
+- `src/astro-web-function.ts` — `AstroWebFunction`
 
 ### 5.2 Common props interface
 
 ```ts
-export interface WebFunctionPermissions {
-  /** DynamoDB tables granted read/write data access. */
-  readonly dynamodb?: ITable[];
-  /** S3 buckets granted read/write object access. */
-  readonly s3?: IBucket[];
-  /** SQS queues granted message-send access (send + batch send only). */
-  readonly sqs?: IQueue[];
+/** One IAM permission statement applied to the revision execution role. */
+export interface WebFunctionPermission {
+  /** IAM actions, e.g. "dynamodb:GetItem" or ["s3:GetObject", "s3:PutObject"]. */
+  readonly actions: string | readonly string[];
+  /** Resource ARNs, or CDK constructs of any service that expose `.arn`
+   *  (IBucket, ITable, IQueue, RDS clusters, SNS topics — anything). */
+  readonly resources: ReadonlyArray<string | { readonly arn: string }>;
 }
 
 export interface FrameworkWebFunctionProps {
@@ -102,8 +115,8 @@ export interface FrameworkWebFunctionProps {
   readonly endpointName?: string;
   /** Environment variables passed to the revision. */
   readonly environmentVariables?: { readonly [key: string]: string };
-  /** Service grants applied to the execution role. */
-  readonly permissions?: WebFunctionPermissions;
+  /** IAM permission statements applied to the execution role. Always Allow. */
+  readonly permissions?: readonly WebFunctionPermission[];
   /** Asset bucket removal policy; RETAIN by default, matching WebFunctionDelivery. */
   readonly removalPolicy?: RemovalPolicy;
   /** Optional endpoint scaling, throttle, timeout, and logging pass-through. */
@@ -132,8 +145,12 @@ Common behavior:
   asset directory exist under `artifactDirectory` (same spirit as the existing
   `WebFunctionProps` artifact zod checks) and fails with a framework-specific message
   pointing at the build-artifact script.
-- Grants: after constructing `WebFunction`, apply `permissions` grants to its
-  execution role (§6.2). Grants are additive; zero props means no policy changes.
+- Permissions: after constructing `WebFunction`, each entry in `permissions`
+  becomes one Allow `PolicyStatement` on the execution role (actions from
+  `actions`, resources resolved from `resources`: a string is used as the ARN
+  directly; an object is read via its `arn` property). Grants are additive; zero
+  entries means no policy changes. The effect is always `Allow` (operator
+  decision 2026-11-20); Deny is out of scope.
 
 ### 5.3 Public surface of `WebFunction` (additive, non-breaking)
 
@@ -147,19 +164,20 @@ public get grantPrincipal(): IGrantable;
 This is the prerequisite change that makes the permissions story work for any AWS
 service, not just the three convenience targets.
 
-### 5.4 Grant defaults
+### 5.4 Permissions (revised 2026-11-20, operator review)
 
-| Permission key | CDK grant called | Actions implied (actual aws-cdk-lib 2.274 emissions; corrected post-review) |
-|---|---|---|
-| `permissions.dynamodb` | `table.grantReadWriteData(role)` | Get/Put/Update/Delete/ConditionCheck item, Query, Scan, Batch*, stream reads, DescribeTable |
-| `permissions.s3` | `bucket.grantReadWrite(role)` | s3:GetObject*, s3:PutObject (plus Tagging/Retention/LegalHold variants; no PutObjectAcl), s3:Abort*, s3:DeleteObject*, GetBucket*/List* |
-| `permissions.sqs` | `queue.grantSendMessages(role)` | sqs:SendMessage, GetQueueAttributes, GetQueueUrl (no SendMessageBatch) |
+The original typed convenience keys (`dynamodb`/`s3`/`sqs` with hardcoded
+`grantReadWriteData`/`grantReadWrite`/`grantSendMessages` calls and duck-typed
+predicates pinning `tableArn`/`bucketArn`/`queueArn`) were dropped at operator
+review: they limited permissions to three services and encoded coarse
+least-unreviewed action sets. The replaced design is a plain statement list
+(§5.2): the consumer names the exact IAM actions and passes any resource — a
+string ARN or any CDK construct exposing `.arn`, for any AWS service.
 
-Each accepts an array; grants apply to every element. Unlike `WebFunctionAuthType`,
-the CDK resource types (`ITable`/`IBucket`/`IQueue`) are TypeScript interfaces with no
-runtime class, so there is no `instanceof` to zod-validate against: the arrays are
-checked at synthesis with a duck-typed predicate (an ARN-bearing construct object)
-and the grant calls themselves fail fast if a wrong shape is passed.
+Validation at synthesis: `actions` must be a non-empty string or non-empty
+array of strings; `resources` must be a non-empty array whose elements are
+strings or objects exposing a string `arn` (one duck-typed check — no
+`instanceof`, since the CDK resource interfaces have no runtime class).
 
 ### 5.5 Astro example (`examples/fullstack/astro`)
 
@@ -225,8 +243,10 @@ CloudFormation output; the TanStack stack additionally keeps its public
    - Each framework construct synthesizes the expected Web Function config
      (entrypoint, auth, endpoint, `NODE_ENV=production` default and override) and the
      expected single asset mapping with its framework prefix.
-   - `permissions` grants produce the expected IAM statements for DynamoDB, S3, and
-     SQS (one test per service, plus an all-three test), including array handling.
+   - `permissions` statements produce the expected IAM policy statements (revised
+     2026-11-20: generic statement tests — actions string vs array, resource
+     object vs string ARN, multiple statements, and a construct-based resource
+     for a non-DynamoDB/S3/SQS service), not per-service grant tests.
    - Layout validation rejects a missing launcher and a missing asset directory with
      framework-specific messages.
    - Props defaults: endpointName "prod", IAM_AUTH/HOME_REGION, RETAIN bucket policy
@@ -265,7 +285,7 @@ CloudFormation output; the TanStack stack additionally keeps its public
 | # | Decision | Choice |
 |---|---|---|
 | Q1 | Placement | Library-level constructs in `src/`, exported from `index.ts` |
-| Q2 | Permissions API | Both: public `executionRole`/`grantPrincipal` core + typed `permissions` conveniences for DynamoDB/S3/SQS |
+| Q2 | Permissions API | Public `executionRole`/`grantPrincipal` core + typed `permissions` conveniences for DynamoDB/S3/SQS. **Superseded 2026-11-20 (operator review):** typed conveniences dropped in favor of generic `WebFunctionPermission` statements (`actions` + `resources` accepting any ARN-bearing construct), always Allow |
 | Q3 | Astro | Build the minimal `examples/fullstack/astro` example; no convention-only construct |
 | Q4 | Astro modes | SSR only (`@astrojs/node`); no static-only mode in v1 |
 | Q5 | Encapsulation | Constructs compose `WebFunction` + `WebFunctionDelivery` internally, expose both as readonly properties, curated pass-through props; `authType`/`endpointType`/`cognito` are not props because the mandatory delivery requires IAM_AUTH + HOME_REGION (review finding) |
