@@ -1,0 +1,5 @@
+dist/
+.astro/
+*.tsbuildinfo
+# The repository root ignores tsconfig.json (jsii output). This example's tsconfig is source.
+!tsconfig.json

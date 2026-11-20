@@ -191,7 +191,14 @@ describe("extracted Next.js Web Function ZIP", () => {
 		expect(zipPath).toEndWith(".zip");
 		expect(readdirSync(extractedRoot)).toContain("index.js");
 		stackTemplate?.hasResourceProperties("AWS::Lambda::WebFunctionRevision", {
-			ServiceConfig: { EnvironmentVariables: { AWS_LAMBDA_NODEJS_ENTRYPOINT: "index.js" } },
+			ServiceConfig: {
+				EnvironmentVariables: {
+					AWS_LAMBDA_NODEJS_ENTRYPOINT: "index.js",
+					// The NextJsWebFunction construct sets NODE_ENV=production by default
+					// (spec §5.7: a functional no-op for the standalone Next.js build).
+					NODE_ENV: "production",
+				},
+			},
 			BuildConfig: { RuntimeConfig: { Runtime: "nodejs24.x" } },
 		});
 		const distributions = Object.values(stackTemplate?.findResources("AWS::CloudFront::Distribution") ?? {});

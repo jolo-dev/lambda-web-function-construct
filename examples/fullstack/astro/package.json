@@ -1,0 +1,17 @@
+{
+  "name": "fullstack-astro-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "build:artifact": "bash ../shared/build-native.sh . -- node build-artifact.mjs"
+  },
+  "dependencies": {
+    "@astrojs/node": "^9",
+    "astro": "^5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

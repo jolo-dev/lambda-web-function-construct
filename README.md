@@ -78,6 +78,28 @@ See **[Cognito-protected backend examples](examples/cognito/README.md)** for run
 
 User pools are retained on stack deletion or when removing the option; their stack-managed clients and domains are removed. Review retained pools explicitly before deleting user data.
 
+## Framework Web Function constructs
+
+`NextJsWebFunction`, `TanStackWebFunction`, `NuxtWebFunction`, and `AstroWebFunction` deploy a prebuilt framework artifact directory as a Lambda Web Function with its CloudFront delivery: content-hashed static assets are served from a private S3 bucket, all other traffic goes to an IAM-protected Web Function. `authType`, `endpointType`, and `cognito` are not props because the delivery hard-requires an IamAuth HomeRegion Web Function — compose the underlying `WebFunction` (with `WebFunctionDelivery` where its IamAuth/HomeRegion requirement fits) directly for other combinations. `endpointName` defaults to `"prod"`, `NODE_ENV` defaults to `"production"`, and the asset bucket defaults to `RemovalPolicy.RETAIN`. Synthesis never runs a framework build; stage the artifact first with the framework's `build:artifact` script.
+
+```ts
+import { TanStackWebFunction } from "lambda-web-function-construct";
+
+const site = new TanStackWebFunction(this, "Site", {
+  artifactDirectory: "examples/fullstack/artifacts/tanstack-start/native-darwin-arm64",
+  functionName: "my-site",
+  permissions: {
+    dynamodb: [table], // grantReadWriteData: Get/Put/Update/Delete/ConditionCheck item, Query, Scan, Batch*, stream reads, DescribeTable
+    s3: [bucket],      // grantReadWrite: s3:GetObject*, s3:PutObject (plus Tagging/Retention/LegalHold variants; no PutObjectAcl), s3:Abort*, s3:DeleteObject*; GetBucket*/List* on the bucket
+    sqs: [queue],      // grantSendMessages: sqs:SendMessage
+  },
+});
+// Anything else (least privilege or other services): use the role directly, e.g.
+// table.grantReadWriteData(site.webFunction.grantPrincipal)
+```
+
+The comments list the actions emitted by the pinned aws-cdk-lib 2.274 grants; `grantSendMessages` additionally emits the queue-lookup actions `sqs:GetQueueAttributes` and `sqs:GetQueueUrl`.
+
 ## Development
 
 Install [mise](https://mise.jdx.dev/getting-started.html), then use the pinned Node.js 24.22.1 and Bun 1.4.4 toolchain:
@@ -101,7 +123,7 @@ CDK library, JSII, and JSII packaging versions are managed by `package.json` and
 
 ## Fullstack framework examples (local proof)
 
-Production-server examples for **Next.js 16.4.6** (standalone), **Nuxt 4.6.4** (Nitro `node-server`), and **TanStack Start 1.169.5** live under [`examples/fullstack/`](examples/fullstack/). Each example stages a deployable artifact, composes `WebFunction` with `WebFunctionDelivery` (immutable static assets from private S3, dynamic traffic to an IAM-protected Web Function), and has local extracted-artifact smoke tests proving SSR, a native server mutation with validation, navigation, and static/public asset serving. See the per-example READMEs and [`examples/fullstack/shared/README.md`](examples/fullstack/shared/README.md).
+Production-server examples for **Next.js 16.4.6** (standalone), **Nuxt 4.6.4** (Nitro `node-server`), **TanStack Start 1.169.5**, and **Astro 5.18.2** (SSR, `@astrojs/node` mode `"local"`) live under [`examples/fullstack/`](examples/fullstack/). Each example stages a deployable artifact, deploys it through the matching framework construct — `NextJsWebFunction`, `NuxtWebFunction`, `TanStackWebFunction`, or `AstroWebFunction`, which composes `WebFunction` with `WebFunctionDelivery` (immutable static assets from private S3, dynamic traffic to an IAM-protected Web Function) — and has local extracted-artifact smoke tests proving SSR, a native server mutation with validation, navigation, and static/public asset serving. The Astro example is local proof only: its native artifact is built and smoke-tested, with no arm64 container build or live deployment yet. See the per-example READMEs and [`examples/fullstack/shared/README.md`](examples/fullstack/shared/README.md).
 
 **Status:** local proof, local Linux Arm64 container proof, and **bounded live probes of Next.js and TanStack Start** using the operator-approved `KEYALL` cache policy (1-second TTL keyed on Authorization, all cookies, and all query strings). The earlier all-zero-TTL policy was rejected live; a viewer-function `x-forwarded-*` header error was found live and fixed with `x-public-*` headers. Nuxt was deployed, inspected, and **deleted on request**. TanStack Start with the stateless basic-auth flow was redeployed on 2026-11-19 and is **intentionally retained for viewing**: **https://d29nqdx0jywl18.cloudfront.net** (demo login `demo@example.com` / `demo-password`). See [`examples/fullstack/shared/live-resources.md`](examples/fullstack/shared/live-resources.md) for identifiers and cleanup commands. Browser hydration, streaming, and two-build old-asset retention remain unverified. All three artifacts were built in the pinned `linux/arm64` Node 24.22.1 container (`bash examples/fullstack/shared/build-arm64-artifacts.sh`); the runtime smoke covered the earlier pre-auth artifacts, and the post-auth TanStack rebuild was platform/artifact-content checked locally, with its live rollout the next gate. Further rollout is gated by [`examples/fullstack/shared/aws-checklist.md`](examples/fullstack/shared/aws-checklist.md). Build tooling never runs during CDK synthesis.
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { App, Stack } from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import { CfnRole, PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import {
   WebFunction,
   WebFunctionAuthType,
@@ -26,6 +27,16 @@ writeFileSync(
   entry,
   "export const handler = (): Response => new Response('ok');\n",
 );
+
+function minimalProps(functionName: string) {
+  return {
+    entry,
+    functionName,
+    authType: WebFunctionAuthType.APPLICATION_MANAGED,
+    endpointType: WebFunctionEndpointType.HOME_REGION,
+    endpointName: functionName,
+  };
+}
 
 test.each([
   [WebFunctionAuthType.IAM_AUTH, "IamAuth"],
@@ -139,6 +150,38 @@ test("creates a web function endpoint after its first revision", () => {
   const revision = template.findResources("AWS::Lambda::WebFunctionRevision")[revisionLogicalId!];
   expect(revision.DependsOn).toContain(loggingPolicyId);
   expect(assembly.directory).toBeTruthy();
+});
+
+test("exposes the revision execution role for grants", () => {
+  const app = new App();
+  const stack = new Stack(app, "Stack");
+  const fn = new WebFunction(stack, "Fn", minimalProps("expose-role"));
+  expect(fn.executionRole).toBeInstanceOf(Role);
+  // Grants via the standard CDK API must land on the same role.
+  const role = fn.executionRole;
+  expect(fn.grantPrincipal).toBe(role);
+  // WebFunction already adds its own CloudWatch-logs statement to this policy,
+  // so the caller-side grant lands after it — match by content, not index.
+  role.addToPrincipalPolicy(new PolicyStatement({
+    actions: ["dynamodb:GetItem"],
+    resources: ["arn:aws:dynamodb:eu-central-1:123456789012:table/demo"],
+  }));
+  const template = Template.fromStack(stack);
+  // Bind the grant to the execution role's policy: the logs statement and the
+  // dynamodb grant must coexist in one PolicyDocument whose Roles references
+  // the execution role logical ID (BucketDeployments own unrelated policies).
+  const roleLogicalId = stack.getLogicalId(
+    fn.executionRole.node.defaultChild as CfnRole,
+  );
+  const matched = Object.entries(
+    template.findResources("AWS::IAM::Policy"),
+  ).filter(([, resource]) => {
+    const document = JSON.stringify((resource as { Properties?: { PolicyDocument?: unknown } }).Properties?.PolicyDocument);
+    return document?.includes("logs:PutLogEvents") && document.includes("dynamodb:GetItem");
+  });
+  expect(matched).toHaveLength(1);
+  const policyResource = matched[0]![1] as { Properties?: { Roles?: unknown[] } };
+  expect(policyResource.Properties?.Roles).toContainEqual({ Ref: roleLogicalId });
 });
 
 test("synthesizes all six benchmark example stacks cleanly", () => {
