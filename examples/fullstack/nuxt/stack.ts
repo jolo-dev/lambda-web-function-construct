@@ -3,7 +3,7 @@ import type { Construct } from "constructs";
 import { NuxtWebFunction, WebFunction, WebFunctionDelivery } from "../../../src";
 
 export interface NuxtExampleStackProps extends StackProps {
-  /** Artifact root staged by build-artifact.mjs; it must contain index.js and .output/public. */
+  /** Artifact root staged by build-artifact.mjs; it must contain index.js and .output/public/_nuxt. */
   readonly artifactDirectory: string;
 }
 

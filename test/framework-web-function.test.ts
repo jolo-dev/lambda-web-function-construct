@@ -15,6 +15,7 @@ import {
   WebFunctionDelivery,
 } from "../src";
 import { TanStackStartExampleStack } from "../examples/fullstack/tanstack-start/stack";
+import { NuxtExampleStack } from "../examples/fullstack/nuxt/stack";
 
 const fixture = mkdtempSync(path.join(tmpdir(), "framework-web-function-"));
 process.on("exit", () => {
@@ -273,6 +274,28 @@ test("dogfooded TanStack example stack sets asset bucket removal policy to DESTR
     env: { account: "123456789012", region: "eu-central-1" },
     artifactDirectory: artifactDir("tanstack-start"),
     sessionPassword: "x".repeat(32),
+  });
+  // The stack contains TWO buckets and WebFunction's code bucket is always
+  // DeletionPolicy "Delete", so a single hasResource would pass even if the
+  // delivery pass-through were dropped. Assert both — the pattern used in
+  // test/web-function-delivery.test.ts:338-350.
+  const template = Template.fromStack(stack);
+  template.resourceCountIs("AWS::S3::Bucket", 2);
+  expect(
+    Object.values(template.findResources("AWS::S3::Bucket"))
+      .map((bucket: { DeletionPolicy?: string }) => bucket.DeletionPolicy)
+      .sort(),
+  ).toEqual(["Delete", "Delete"]);
+});
+
+// Spec §5.7: the dogfooded Nuxt example stack must pass removalPolicy DESTROY
+// explicitly — dropping the pass-through would silently flip its asset bucket
+// to the construct's RETAIN default, orphaning the bucket on delete.
+test("dogfooded Nuxt example stack sets asset bucket removal policy to DESTROY", () => {
+  const app = new App();
+  const stack = new NuxtExampleStack(app, "Stack", {
+    env: { account: "123456789012", region: "eu-central-1" },
+    artifactDirectory: artifactDir("nuxt"),
   });
   // The stack contains TWO buckets and WebFunction's code bucket is always
   // DeletionPolicy "Delete", so a single hasResource would pass even if the

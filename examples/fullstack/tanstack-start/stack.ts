@@ -4,7 +4,7 @@ import { readSessionPassword } from "../shared/session-secret";
 import { TanStackWebFunction, WebFunction, WebFunctionDelivery } from "../../../src";
 
 export interface TanStackStartExampleStackProps extends StackProps {
-  /** Artifact root staged by build-artifact.mjs; must contain index.js and dist/. */
+  /** Artifact root staged by build-artifact.mjs; must contain index.js and dist/client/assets. */
   readonly artifactDirectory: string;
   /** Secret used by TanStack Start's session cookie signing; must be at least 32 characters. */
   readonly sessionPassword: string;
