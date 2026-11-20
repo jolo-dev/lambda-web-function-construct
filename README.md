@@ -88,17 +88,18 @@ import { TanStackWebFunction } from "lambda-web-function-construct";
 const site = new TanStackWebFunction(this, "Site", {
   artifactDirectory: "examples/fullstack/artifacts/tanstack-start/native-darwin-arm64",
   functionName: "my-site",
-  permissions: {
-    dynamodb: [table], // grantReadWriteData: Get/Put/Update/Delete/ConditionCheck item, Query, Scan, Batch*, stream reads, DescribeTable
-    s3: [bucket],      // grantReadWrite: s3:GetObject*, s3:PutObject (plus Tagging/Retention/LegalHold variants; no PutObjectAcl), s3:Abort*, s3:DeleteObject*; GetBucket*/List* on the bucket
-    sqs: [queue],      // grantSendMessages: sqs:SendMessage
-  },
+  permissions: [
+    // Each entry becomes one Allow statement on the revision execution role.
+    { actions: "dynamodb:GetItem", resources: [table.tableArn] },
+    { actions: ["s3:GetObject", "s3:PutObject"], resources: [bucket.bucketArn] },
+    { actions: "sns:Publish", resources: [topic.topicArn] },
+  ],
 });
-// Anything else (least privilege or other services): use the role directly, e.g.
+// Standard CDK grant APIs (or hand-built least-privilege statements) also work:
 // table.grantReadWriteData(site.webFunction.grantPrincipal)
 ```
 
-The comments list the actions emitted by the pinned aws-cdk-lib 2.274 grants; `grantSendMessages` additionally emits the queue-lookup actions `sqs:GetQueueAttributes` and `sqs:GetQueueUrl`.
+`actions` is one IAM action or an array of them; `resources` are ARN strings for any AWS service — pass any construct's ARN property (`bucket.bucketArn`, `table.tableArn`, `queue.queueArn`, `topic.topicArn`, `cluster.clusterArn`) or a literal ARN. Every entry is an Allow statement on the revision execution role; the role is also exposed directly as `site.webFunction.executionRole` / `site.webFunction.grantPrincipal`.
 
 ## Development
 

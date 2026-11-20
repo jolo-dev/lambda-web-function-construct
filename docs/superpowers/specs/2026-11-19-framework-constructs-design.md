@@ -100,10 +100,11 @@ matching the repo's one-construct-per-file convention:
 /** One IAM permission statement applied to the revision execution role. */
 export interface WebFunctionPermission {
   /** IAM actions, e.g. "dynamodb:GetItem" or ["s3:GetObject", "s3:PutObject"]. */
-  readonly actions: string | readonly string[];
-  /** Resource ARNs, or CDK constructs of any service that expose `.arn`
-   *  (IBucket, ITable, IQueue, RDS clusters, SNS topics — anything). */
-  readonly resources: ReadonlyArray<string | { readonly arn: string }>;
+  readonly actions: string | string[];
+  /** Resource ARNs for any AWS service. Pass the construct's ARN property
+   *  directly — bucket.bucketArn, table.tableArn, queue.queueArn,
+   *  topic.topicArn, cluster.clusterArn — or a literal ARN string. */
+  readonly resources: string[];
 }
 
 export interface FrameworkWebFunctionProps {
@@ -116,7 +117,7 @@ export interface FrameworkWebFunctionProps {
   /** Environment variables passed to the revision. */
   readonly environmentVariables?: { readonly [key: string]: string };
   /** IAM permission statements applied to the execution role. Always Allow. */
-  readonly permissions?: readonly WebFunctionPermission[];
+  readonly permissions?: WebFunctionPermission[];
   /** Asset bucket removal policy; RETAIN by default, matching WebFunctionDelivery. */
   readonly removalPolicy?: RemovalPolicy;
   /** Optional endpoint scaling, throttle, timeout, and logging pass-through. */
@@ -124,6 +125,15 @@ export interface FrameworkWebFunctionProps {
   // and loggingConfig are passed through to WebFunction unchanged.
 }
 ```
+
+Note (revision 2, 2026-11-20): the arrays are non-readonly `string[]` because jsii
+rejects `readonly X[]`/`ReadonlyArray<X>` property types (JSII3001) and anonymous
+inline object types in unions (JSII1003). The construct-object resource form was
+therefore dropped in favor of ARN strings — matching the operator's pre-authorized
+fallback ("let the user simply add an array of object { actions, resources:
+[S3Bucket.arn, ...] }") — with consumers passing any construct's ARN property.
+IBucket, ITable, and IQueue expose `bucketArn`/`tableArn`/`queueArn`, not `.arn`,
+so the earlier `.arn`-object claim was incorrect in any case.
 
 Common behavior:
 
@@ -147,8 +157,7 @@ Common behavior:
   pointing at the build-artifact script.
 - Permissions: after constructing `WebFunction`, each entry in `permissions`
   becomes one Allow `PolicyStatement` on the execution role (actions from
-  `actions`, resources resolved from `resources`: a string is used as the ARN
-  directly; an object is read via its `arn` property). Grants are additive; zero
+  `actions`, resources used verbatim as the ARNs). Grants are additive; zero
   entries means no policy changes. The effect is always `Allow` (operator
   decision 2026-11-20); Deny is out of scope.
 
@@ -171,13 +180,19 @@ The original typed convenience keys (`dynamodb`/`s3`/`sqs` with hardcoded
 predicates pinning `tableArn`/`bucketArn`/`queueArn`) were dropped at operator
 review: they limited permissions to three services and encoded coarse
 least-unreviewed action sets. The replaced design is a plain statement list
-(§5.2): the consumer names the exact IAM actions and passes any resource — a
-string ARN or any CDK construct exposing `.arn`, for any AWS service.
+(§5.2): the consumer names the exact IAM actions and passes resource ARN
+strings for any AWS service — a construct's ARN property
+(`bucket.bucketArn`, `table.tableArn`, `queue.queueArn`, `topic.topicArn`,
+`cluster.clusterArn`) or a literal ARN. An earlier revision sketched an
+object form read via `.arn`, but the mainstream CDK resource interfaces do
+not expose `.arn` (they expose `bucketArn`/`tableArn`/`queueArn`/…) and jsii
+rejects anonymous inline object unions anyway (JSII1003), so resources are
+strings only — matching the operator's pre-authorized fallback.
 
 Validation at synthesis: `actions` must be a non-empty string or non-empty
-array of strings; `resources` must be a non-empty array whose elements are
-strings or objects exposing a string `arn` (one duck-typed check — no
-`instanceof`, since the CDK resource interfaces have no runtime class).
+array of non-empty strings; `resources` must be a non-empty array of
+non-empty strings. No duck-typed construct checks remain — nothing has a
+runtime class to check, and the typed surface carries the contract.
 
 ### 5.5 Astro example (`examples/fullstack/astro`)
 
@@ -244,9 +259,10 @@ CloudFormation output; the TanStack stack additionally keeps its public
      (entrypoint, auth, endpoint, `NODE_ENV=production` default and override) and the
      expected single asset mapping with its framework prefix.
    - `permissions` statements produce the expected IAM policy statements (revised
-     2026-11-20: generic statement tests — actions string vs array, resource
-     object vs string ARN, multiple statements, and a construct-based resource
-     for a non-DynamoDB/S3/SQS service), not per-service grant tests.
+     2026-11-20: generic statement tests — actions string vs array, single vs
+     multiple ARN resources, multiple statements, and an ARN from a
+     non-DynamoDB/S3/SQS service such as an SNS `topicArn`), not per-service
+     grant tests.
    - Layout validation rejects a missing launcher and a missing asset directory with
      framework-specific messages.
    - Props defaults: endpointName "prod", IAM_AUTH/HOME_REGION, RETAIN bucket policy
@@ -285,7 +301,7 @@ CloudFormation output; the TanStack stack additionally keeps its public
 | # | Decision | Choice |
 |---|---|---|
 | Q1 | Placement | Library-level constructs in `src/`, exported from `index.ts` |
-| Q2 | Permissions API | Public `executionRole`/`grantPrincipal` core + typed `permissions` conveniences for DynamoDB/S3/SQS. **Superseded 2026-11-20 (operator review):** typed conveniences dropped in favor of generic `WebFunctionPermission` statements (`actions` + `resources` accepting any ARN-bearing construct), always Allow |
+| Q2 | Permissions API | Public `executionRole`/`grantPrincipal` core + typed `permissions` conveniences for DynamoDB/S3/SQS. **Superseded 2026-11-20 (operator review):** typed conveniences dropped in favor of generic `WebFunctionPermission` statements (`actions` + `resources` as ARN strings — any construct's ARN property or a literal ARN), always Allow |
 | Q3 | Astro | Build the minimal `examples/fullstack/astro` example; no convention-only construct |
 | Q4 | Astro modes | SSR only (`@astrojs/node`); no static-only mode in v1 |
 | Q5 | Encapsulation | Constructs compose `WebFunction` + `WebFunctionDelivery` internally, expose both as readonly properties, curated pass-through props; `authType`/`endpointType`/`cognito` are not props because the mandatory delivery requires IAM_AUTH + HOME_REGION (review finding) |
