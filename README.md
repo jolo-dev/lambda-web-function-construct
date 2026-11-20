@@ -1,18 +1,20 @@
 # Lambda Web Function Construct
 
-An AWS CDK construct for deploying a Node.js Lambda Web Function with a private code bucket, immutable revision, and HTTPS endpoint.
+AWS CDK constructs for deploying Node.js Lambda Web Functions with a private code bucket, immutable revision, and HTTPS endpoint. For Next.js, Astro, Nuxt, or TanStack Start, see [Framework Web Function constructs](#framework-web-function-constructs).
 
 ## Prerequisites
 
 - Node.js 24 or later
-- Bun on the machine running CDK synthesis, because the construct bundles the entry file with `bun build`
 - AWS CDK v2
+- Bun on the machine running CDK synthesis when using `WebFunction` with `entry`, which bundles the entry file with `bun build`. Prebuilt framework artifacts are not bundled at synthesis.
 
 ## Install
 
 ```sh
-bun add lambda-web-function-construct aws-cdk-lib constructs
+npm install lambda-web-function-construct aws-cdk-lib constructs
 ```
+
+With Bun: `bun add lambda-web-function-construct aws-cdk-lib constructs`.
 
 ## Usage
 
@@ -80,14 +82,42 @@ User pools are retained on stack deletion or when removing the option; their sta
 
 ## Framework Web Function constructs
 
-`NextJsWebFunction`, `TanStackWebFunction`, `NuxtWebFunction`, and `AstroWebFunction` deploy a prebuilt framework artifact directory as a Lambda Web Function with its CloudFront delivery: content-hashed static assets are served from a private S3 bucket, all other traffic goes to an IAM-protected Web Function. `authType`, `endpointType`, and `cognito` are not props because the delivery hard-requires an IamAuth HomeRegion Web Function — compose the underlying `WebFunction` (with `WebFunctionDelivery` where its IamAuth/HomeRegion requirement fits) directly for other combinations. `endpointName` defaults to `"prod"`, `NODE_ENV` defaults to `"production"`, and the asset bucket defaults to `RemovalPolicy.RETAIN`. Synthesis never runs a framework build; stage the artifact first with the framework's `build:artifact` script.
+Available in **`lambda-web-function-construct` 0.2.0 and later**. Import the constructs from the package root, not from `src/`. The npm package ships compiled JavaScript and TypeScript declarations under `lib/` (for example, `lib/nextjs-web-function.js` and `lib/nextjs-web-function.d.ts`); the TypeScript source lives in this repository.
+
+| Framework | Construct source | Static directory inside the artifact | CloudFront path | Example |
+| --- | --- | --- | --- | --- |
+| Next.js standalone | [`NextJsWebFunction`](src/nextjs-web-function.ts) | `.next/static/` | `/_next/static/*` | [Build and stage Next.js](examples/fullstack/nextjs/README.md) |
+| Astro SSR (`@astrojs/node`) | [`AstroWebFunction`](src/astro-web-function.ts) | `dist/client/_astro/` | `/_astro/*` | [Build and stage Astro](examples/fullstack/astro/README.md) |
+| Nuxt (Nitro `node-server`) | [`NuxtWebFunction`](src/nuxt-web-function.ts) | `.output/public/_nuxt/` | `/_nuxt/*` | [Build and stage Nuxt](examples/fullstack/nuxt/README.md) |
+| TanStack Start | [`TanStackWebFunction`](src/tanstack-web-function.ts) | `dist/client/assets/` | `/assets/*` | [Build and stage TanStack Start](examples/fullstack/tanstack-start/README.md) |
+
+Stage your framework's production output first, including its runtime dependencies and a root `index.js` launcher that listens on `AWS_LAMBDA_HTTP_ENDPOINT`. Set `artifactDirectory` to the staged directory, not the framework project root. CDK synthesis does not run the framework build. The linked examples include launchers and `build:artifact` scripts.
 
 ```ts
-import { TanStackWebFunction } from "lambda-web-function-construct";
+import { AstroWebFunction, NextJsWebFunction } from "lambda-web-function-construct";
 
-const site = new TanStackWebFunction(this, "Site", {
-  artifactDirectory: "examples/fullstack/artifacts/tanstack-start/native-darwin-arm64",
-  functionName: "my-site",
+// Inside your CDK stack, choose the construct for the artifact you built.
+const nextSite = new NextJsWebFunction(this, "NextSite", {
+  artifactDirectory: "./artifacts/nextjs",
+  functionName: "my-nextjs-site",
+});
+
+const astroSite = new AstroWebFunction(this, "AstroSite", {
+  artifactDirectory: "./artifacts/astro",
+  functionName: "my-astro-site",
+});
+```
+
+Each construct fronts the Web Function with CloudFront: content-hashed assets come from a private S3 bucket, and other requests go to an IAM-protected home-region Web Function. The constructs do not accept `authType`, `endpointType`, or `cognito`; use `WebFunction` directly when you need a different endpoint or auth mode. `endpointName` defaults to `"prod"`, `NODE_ENV` to `"production"`, and the static asset bucket's removal policy to `RemovalPolicy.RETAIN`.
+
+### Grant the application AWS permissions
+
+For any of the four constructs, pass narrowly scoped permissions to the revision execution role:
+
+```ts
+const site = new NextJsWebFunction(this, "Site", {
+  artifactDirectory: "./artifacts/nextjs",
+  functionName: "my-nextjs-site",
   permissions: [
     // Each entry becomes one Allow statement on the revision execution role.
     { actions: "dynamodb:GetItem", resources: [table.tableArn] },
