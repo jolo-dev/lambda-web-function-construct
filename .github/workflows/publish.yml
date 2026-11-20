@@ -71,4 +71,4 @@ jobs:
       # Configure publish.yml as an npm trusted publisher; no NPM_TOKEN is needed.
       - name: Publish with npm trusted publishing
         if: steps.version.outputs.published == 'false'
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --loglevel=verbose
