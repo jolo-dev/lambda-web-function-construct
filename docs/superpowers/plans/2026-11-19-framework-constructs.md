@@ -14,6 +14,13 @@
 
 ## File structure
 
+> **Superseded 2026-11-20 (operator review):** the file layout below (single
+> `src/framework-web-function.ts`) and the typed `WebFunctionPermissions`
+> (dynamodb/s3/sqs) shape were replaced by one file per construct plus generic
+> `WebFunctionPermission` statements (`actions: string | string[]`,
+> `resources: string[]`) — commits `328bd73`/`2a9a690` on
+> `feature/framework-construct-files`. The spec is authoritative.
+
 - Modify: `src/web-function.ts` — expose `executionRole` (readonly `Role`) and `grantPrincipal` on `WebFunction`.
 - Create: `src/framework-web-function.ts` — internal base + `FrameworkWebFunctionProps` + `WebFunctionPermissions` + the four public construct classes (one file; they change together).
 - Modify: `src/index.ts` — export the new constructs/types.
