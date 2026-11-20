@@ -465,7 +465,7 @@ Expected: all pass / 0 fail (215 baseline + new framework + astro tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add test/fullstack-astro.test.ts examples/fullstack/astro examples/fullstack/artifacts/.gitignore 2>/dev/null; git add test/fullstack-astro.test.ts examples/fullstack/astro
+git add test/fullstack-astro.test.ts examples/fullstack/astro
 git commit -m "Test Astro Web Function example end to end"
 ```
 
