@@ -24,7 +24,7 @@ export interface WebFunctionPermissions {
 	readonly dynamodb?: ITable[];
 	/** S3 buckets granted read/write object access. */
 	readonly s3?: IBucket[];
-	/** SQS queues granted message-send access (send + batch send only). */
+	/** SQS queues granted message-send access (grantSendMessages; batch send is not included in current aws-cdk-lib). */
 	readonly sqs?: IQueue[];
 }
 
