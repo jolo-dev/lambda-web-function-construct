@@ -9,9 +9,12 @@ import { Bucket } from "aws-cdk-lib/aws-s3";
 import { Queue } from "aws-cdk-lib/aws-sqs";
 import {
   NextJsWebFunction,
+  NuxtWebFunction,
+  TanStackWebFunction,
   WebFunction,
   WebFunctionDelivery,
 } from "../src";
+import { TanStackStartExampleStack } from "../examples/fullstack/tanstack-start/stack";
 
 const fixture = mkdtempSync(path.join(tmpdir(), "framework-web-function-"));
 process.on("exit", () => {
@@ -44,6 +47,30 @@ function artifactDir(
     writeFileSync(path.join(assets, "chunk.js"), "export {};\n");
   }
   return root;
+}
+
+/** CloudFront DistributionConfig fields needed to assert which URL prefix routes to S3. */
+interface DistributionConfigShape {
+  readonly Origins: readonly { readonly Id: string; readonly S3OriginConfig?: unknown; readonly CustomOriginConfig?: unknown }[];
+  readonly DefaultCacheBehavior: { readonly TargetOriginId: string };
+  readonly CacheBehaviors?: readonly { readonly PathPattern: string; readonly TargetOriginId: string }[];
+}
+
+/**
+ * The single path pattern the delivery routes to an S3 origin — the framework
+ * construct's URL prefix plus `*`.
+ */
+function s3BackedPathPattern(template: Template): string {
+  const distributions = Object.values(template.findResources("AWS::CloudFront::Distribution"));
+  expect(distributions).toHaveLength(1);
+  const config = (distributions[0] as { Properties: { DistributionConfig: DistributionConfigShape } }).Properties
+    .DistributionConfig;
+  const s3Origins = new Set(config.Origins.filter((origin) => origin.S3OriginConfig !== undefined).map((origin) => origin.Id));
+  const s3Backed = config.CacheBehaviors
+    ?.filter((behavior) => s3Origins.has(behavior.TargetOriginId))
+    .map((behavior) => behavior.PathPattern) ?? [];
+  expect(s3Backed).toHaveLength(1);
+  return s3Backed[0] ?? "";
 }
 
 test("NextJsWebFunction synthesizes function and delivery with framework defaults", () => {
@@ -171,6 +198,38 @@ test("permissions.sqs grants send access", () => {
   });
 });
 
+test("TanStackWebFunction maps dist/client/assets to /assets/ and sets NODE_ENV", () => {
+  const stack = new Stack(new App(), "TanStackSynthesisStack");
+  const site = new TanStackWebFunction(stack, "Site", {
+    artifactDirectory: artifactDir("tanstack-start"),
+    functionName: "tanstack-synthesis",
+  });
+  expect(site.webFunction).toBeInstanceOf(WebFunction);
+  expect(site.delivery).toBeInstanceOf(WebFunctionDelivery);
+  const template = Template.fromStack(stack);
+  template.hasResourceProperties("AWS::Lambda::WebFunctionRevision", {
+    ServiceConfig: { EnvironmentVariables: { NODE_ENV: "production" } },
+  });
+  // The delivery's CloudFront cache behavior is the observable for the framework's
+  // URL prefix — /assets/* served from S3, dynamic traffic from the Web Function.
+  expect(s3BackedPathPattern(template)).toBe("/assets/*");
+});
+
+test("NuxtWebFunction maps .output/public/_nuxt to /_nuxt/ and sets NODE_ENV", () => {
+  const stack = new Stack(new App(), "NuxtSynthesisStack");
+  const site = new NuxtWebFunction(stack, "Site", {
+    artifactDirectory: artifactDir("nuxt"),
+    functionName: "nuxt-synthesis",
+  });
+  expect(site.webFunction).toBeInstanceOf(WebFunction);
+  expect(site.delivery).toBeInstanceOf(WebFunctionDelivery);
+  const template = Template.fromStack(stack);
+  template.hasResourceProperties("AWS::Lambda::WebFunctionRevision", {
+    ServiceConfig: { EnvironmentVariables: { NODE_ENV: "production" } },
+  });
+  expect(s3BackedPathPattern(template)).toBe("/_nuxt/*");
+});
+
 test("combined permissions grant the union on the execution role policy", () => {
   const stack = new Stack(new App(), "CombinedPermissionsStack");
   const tables = [0, 1].map((i) => new Table(stack, `Table${i}`, {
@@ -202,4 +261,28 @@ test("combined permissions grant the union on the execution role policy", () => 
       ]),
     }),
   });
+});
+
+// Spec §5.7: the dogfooded TanStack example stack must pass removalPolicy DESTROY
+// explicitly — its asset bucket backs the intentionally retained live deployment,
+// and dropping the pass-through would silently flip it to the construct's RETAIN
+// default, orphaning the bucket on delete.
+test("dogfooded TanStack example stack sets asset bucket removal policy to DESTROY", () => {
+  const app = new App();
+  const stack = new TanStackStartExampleStack(app, "Stack", {
+    env: { account: "123456789012", region: "eu-central-1" },
+    artifactDirectory: artifactDir("tanstack-start"),
+    sessionPassword: "x".repeat(32),
+  });
+  // The stack contains TWO buckets and WebFunction's code bucket is always
+  // DeletionPolicy "Delete", so a single hasResource would pass even if the
+  // delivery pass-through were dropped. Assert both — the pattern used in
+  // test/web-function-delivery.test.ts:338-350.
+  const template = Template.fromStack(stack);
+  template.resourceCountIs("AWS::S3::Bucket", 2);
+  expect(
+    Object.values(template.findResources("AWS::S3::Bucket"))
+      .map((bucket: { DeletionPolicy?: string }) => bucket.DeletionPolicy)
+      .sort(),
+  ).toEqual(["Delete", "Delete"]);
 });

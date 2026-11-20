@@ -1,14 +1,7 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import type { Construct } from "constructs";
 import { readSessionPassword } from "../shared/session-secret";
-import {
-  WebFunction,
-  WebFunctionAuthType,
-  WebFunctionDelivery,
-  WebFunctionEndpointType,
-} from "../../../src";
+import { TanStackWebFunction, WebFunction, WebFunctionDelivery } from "../../../src";
 
 export interface TanStackStartExampleStackProps extends StackProps {
   /** Artifact root staged by build-artifact.mjs; must contain index.js and dist/. */
@@ -31,27 +24,16 @@ export class TanStackStartExampleStack extends Stack {
 
     const sessionPassword = readSessionPassword(props.sessionPassword);
 
-    this.webFunction = new WebFunction(this, "App", {
-      artifact: { directory: props.artifactDirectory, entrypoint: "index.js" },
+    const site = new TanStackWebFunction(this, "App", {
+      artifactDirectory: props.artifactDirectory,
       functionName: "fullstack-tanstack-start",
-      authType: WebFunctionAuthType.IAM_AUTH,
-      endpointType: WebFunctionEndpointType.HOME_REGION,
-      endpointName: "prod",
-      environmentVariables: {
-        SESSION_PASSWORD: sessionPassword,
-        NODE_ENV: "production",
-      },
-    });
-
-    this.delivery = new WebFunctionDelivery(this, "Delivery", {
-      webFunction: this.webFunction,
-      staticAssets: [
-        {
-          directory: path.join(props.artifactDirectory, "dist", "client", "assets"),
-          urlPrefix: "/assets/",
-        },
-      ],
+      environmentVariables: { SESSION_PASSWORD: sessionPassword },
+      // Spec §5.7: explicit DESTROY pass-through — the asset bucket backs the
+      // intentionally retained live deployment, and the construct's RETAIN
+      // default would orphan it on delete.
       removalPolicy: RemovalPolicy.DESTROY,
     });
+    this.webFunction = site.webFunction;
+    this.delivery = site.delivery;
   }
 }
