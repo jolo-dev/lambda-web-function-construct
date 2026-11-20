@@ -24,8 +24,8 @@ import {
 } from "aws-cdk-lib/aws-cognito";
 import {
 	Effect,
-	IGrantable,
-	IPrincipal,
+	type IGrantable,
+	type IPrincipal,
 	PolicyStatement as IamPolicyStatement,
 	Role,
 	ServicePrincipal,

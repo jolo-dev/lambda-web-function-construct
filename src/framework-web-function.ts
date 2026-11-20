@@ -1,13 +1,13 @@
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { RemovalPolicy } from "aws-cdk-lib";
-import { ITable } from "aws-cdk-lib/aws-dynamodb";
+import type { ITable } from "aws-cdk-lib/aws-dynamodb";
 import {
 	CfnWebFunctionEndpoint,
 	CfnWebFunctionRevision,
 } from "aws-cdk-lib/aws-lambda";
-import { IBucket } from "aws-cdk-lib/aws-s3";
-import { IQueue } from "aws-cdk-lib/aws-sqs";
+import type { IBucket } from "aws-cdk-lib/aws-s3";
+import type { IQueue } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 import { z } from "zod";
 import { WebFunction } from "./web-function";
