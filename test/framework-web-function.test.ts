@@ -17,6 +17,7 @@ import {
 import { NextjsExampleStack } from "../examples/fullstack/nextjs/stack";
 import { TanStackStartExampleStack } from "../examples/fullstack/tanstack-start/stack";
 import { NuxtExampleStack } from "../examples/fullstack/nuxt/stack";
+import { AstroExampleStack } from "../examples/fullstack/astro/stack";
 
 const fixture = mkdtempSync(path.join(tmpdir(), "framework-web-function-"));
 process.on("exit", () => {
@@ -319,6 +320,27 @@ test("dogfooded Nuxt example stack sets asset bucket removal policy to DESTROY",
   const stack = new NuxtExampleStack(app, "Stack", {
     env: { account: "123456789012", region: "eu-central-1" },
     artifactDirectory: artifactDir("nuxt"),
+  });
+  // The stack contains TWO buckets and WebFunction's code bucket is always
+  // DeletionPolicy "Delete", so a single hasResource would pass even if the
+  // delivery pass-through were dropped. Assert both — the pattern used in
+  // test/web-function-delivery.test.ts:338-350.
+  const template = Template.fromStack(stack);
+  template.resourceCountIs("AWS::S3::Bucket", 2);
+  expect(
+    Object.values(template.findResources("AWS::S3::Bucket"))
+      .map((bucket: { DeletionPolicy?: string }) => bucket.DeletionPolicy)
+      .sort(),
+  ).toEqual(["Delete", "Delete"]);
+});
+
+// Spec §5.7: the Astro example stack passes removalPolicy DESTROY explicitly like
+// the other dogfooded stacks — guard it against silently flipping to RETAIN.
+test("dogfooded Astro example stack sets asset bucket removal policy to DESTROY", () => {
+  const app = new App();
+  const stack = new AstroExampleStack(app, "Stack", {
+    env: { account: "123456789012", region: "eu-central-1" },
+    artifactDirectory: artifactDir("astro"),
   });
   // The stack contains TWO buckets and WebFunction's code bucket is always
   // DeletionPolicy "Delete", so a single hasResource would pass even if the

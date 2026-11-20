@@ -118,6 +118,12 @@ function runLauncher(endpoint: string | undefined): Promise<{ code: number | nul
 			clearTimeout(deadline);
 			resolve({ code, stderr });
 		});
+		// A spawn failure emits "error" without "exit"; treat it as a failure exit
+		// (same handling as examples/fullstack/shared/probe.ts).
+		child.once("error", () => {
+			clearTimeout(deadline);
+			resolve({ code: null, stderr });
+		});
 	});
 }
 
@@ -150,6 +156,9 @@ function probeIdentityWithoutMarker(): Promise<{ status: number | null; stderr: 
 			if (match) resolve(Number(match[1]));
 		});
 		child.once("exit", (code, signal) => reject(new Error(`launcher exited before READY (code ${code}, signal ${signal}); stderr: ${stderr}`)));
+		// A spawn failure can emit "error" without "exit"; reject instead of hanging
+		// until the deadline (same handling as examples/fullstack/shared/probe.ts).
+		child.once("error", (cause) => reject(cause));
 	});
 	return (async () => {
 		try {
