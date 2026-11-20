@@ -8,6 +8,7 @@ import { AttributeType, Table } from "aws-cdk-lib/aws-dynamodb";
 import { Topic } from "aws-cdk-lib/aws-sns";
 import { ZodError } from "zod";
 import {
+  AstroWebFunction,
   NextJsWebFunction,
   NuxtWebFunction,
   TanStackWebFunction,
@@ -125,20 +126,38 @@ test("endpoint name defaults to prod", () => {
   });
 });
 
-test("rejects a missing launcher file with a framework-specific message", () => {
-  const stack = new Stack(new App(), "MissingLauncherStack");
-  expect(() => new NextJsWebFunction(stack, "Site", {
-    artifactDirectory: artifactDir("nextjs", { launcher: false }),
-    functionName: "missing-launcher",
-  })).toThrow(/Next\.js artifact must contain the required launcher file "index\.js"/);
+test("rejects a missing launcher file with a framework-specific message for every framework", () => {
+  // Loop over all four constructs so a copy-paste error in any framework
+  // definition (name, launcher, or asset directory) fails this test too.
+  const cases = [
+    { construct: NextJsWebFunction, key: "nextjs" as const },
+    { construct: TanStackWebFunction, key: "tanstack-start" as const },
+    { construct: NuxtWebFunction, key: "nuxt" as const },
+    { construct: AstroWebFunction, key: "astro" as const },
+  ];
+  for (const { construct, key } of cases) {
+    const stack = new Stack(new App(), `MissingLauncher-${key}`);
+    expect(() => new construct(stack, "Site", {
+      artifactDirectory: artifactDir(key, { launcher: false }),
+      functionName: "missing-launcher",
+    })).toThrow(/artifact must contain the required launcher file "index\.js"/);
+  }
 });
 
-test("rejects a missing static asset directory with a framework-specific message", () => {
-  const stack = new Stack(new App(), "MissingAssetsStack");
-  expect(() => new NextJsWebFunction(stack, "Site", {
-    artifactDirectory: artifactDir("nextjs", { assets: false }),
-    functionName: "missing-assets",
-  })).toThrow(/Next\.js artifact must contain the required static asset directory "\.next\/static"/);
+test("rejects a missing static asset directory with a framework-specific message for every framework", () => {
+  const cases = [
+    { construct: NextJsWebFunction, key: "nextjs" as const, asset: ".next/static" },
+    { construct: TanStackWebFunction, key: "tanstack-start" as const, asset: "dist/client/assets" },
+    { construct: NuxtWebFunction, key: "nuxt" as const, asset: ".output/public/_nuxt" },
+    { construct: AstroWebFunction, key: "astro" as const, asset: "dist/client/_astro" },
+  ];
+  for (const { construct, key, asset } of cases) {
+    const stack = new Stack(new App(), `MissingAssets-${key}`);
+    expect(() => new construct(stack, "Site", {
+      artifactDirectory: artifactDir(key, { assets: false }),
+      functionName: "missing-assets",
+    })).toThrow(new RegExp(`artifact must contain the required static asset directory "${asset.replace(/\//g, "\\/")}"`));
+  }
 });
 
 test("a permission entry adds one Allow statement for a string action and one ARN", () => {
@@ -302,6 +321,21 @@ test("NuxtWebFunction maps .output/public/_nuxt to /_nuxt/ and sets NODE_ENV", (
     ServiceConfig: { EnvironmentVariables: { NODE_ENV: "production" } },
   });
   expect(s3BackedPathPattern(template)).toBe("/_nuxt/*");
+});
+
+test("AstroWebFunction maps dist/client/_astro to /_astro/ and sets NODE_ENV", () => {
+  const stack = new Stack(new App(), "AstroSynthesisStack");
+  const site = new AstroWebFunction(stack, "Site", {
+    artifactDirectory: artifactDir("astro"),
+    functionName: "astro-synthesis",
+  });
+  expect(site.webFunction).toBeInstanceOf(WebFunction);
+  expect(site.delivery).toBeInstanceOf(WebFunctionDelivery);
+  const template = Template.fromStack(stack);
+  template.hasResourceProperties("AWS::Lambda::WebFunctionRevision", {
+    ServiceConfig: { EnvironmentVariables: { NODE_ENV: "production" } },
+  });
+  expect(s3BackedPathPattern(template)).toBe("/_astro/*");
 });
 
 // Spec §5.7: the dogfooded TanStack example stack must pass removalPolicy DESTROY
